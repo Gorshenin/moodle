@@ -116,6 +116,15 @@ class course_reset_form extends moodleform {
             }
         }
 
+        if ($blockfunctions = get_plugin_list_with_function('block', 'reset_course_form_definition')) {
+            foreach ($blockfunctions as $blocktype => $funcname) {
+                $isattachedtocourse = $blocktype.'_is_attached_to_course';
+                if ($isattachedtocourse($COURSE->id)) {
+                    $funcname($mform);
+                }
+            }
+        }
+
         $mform->addElement('hidden', 'id', $COURSE->id);
         $mform->setType('id', PARAM_INT);
 
@@ -152,6 +161,15 @@ class course_reset_form extends moodleform {
                             $defaults = $defaults + $moddefs;
                         }
                     }
+                }
+            }
+        }
+
+        if ($blockfunctions = get_plugin_list_with_function('block', 'reset_course_form_defaults')) {
+            foreach ($blockfunctions as $blocktype => $funcname) {
+                $isattachedtocourse = $blocktype.'_is_attached_to_course';
+                if ($isattachedtocourse($COURSE->id) && $blockdefs = $funcname($COURSE)) {
+                    $defaults = $defaults + $blockdefs;
                 }
             }
         }

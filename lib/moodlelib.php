@@ -5259,6 +5259,18 @@ function reset_course_userdata($data) {
         }
     }
 
+    // Look in every instance of every block for data to delete.
+    if ($blockfunctions = get_plugin_list_with_function('block', 'reset_userdata')) {
+        foreach ($blockfunctions as $funcname) {
+            $blockstatus = $funcname($data);
+            if (is_array($blockstatus)) {
+                $status = array_merge($status, $blockstatus);
+            } else {
+                debugging( $funcname.' returned incorrect status - must be an array!');
+            }
+        }
+    }
+
     $componentstr = get_string('gradebook', 'grades');
     // Reset gradebook,.
     if (!empty($data->reset_gradebook_items)) {
