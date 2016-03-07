@@ -119,6 +119,17 @@ class course_reset_form extends moodleform {
             }
         }
 
+        if ($blockfunctions = get_plugin_list_with_function('block', 'reset_course_form_definition')) {
+            $allassignedblocks = $this->associated_blocks_calculate($COURSE->id);
+
+            foreach ($allassignedblocks as $block) {
+                $funcname = 'block_'.$block->blockname.'_reset_course_form_definition';
+                if (array_search($funcname, $blockfunctions) !== false) {
+                    $funcname($mform);
+                }
+            }
+        }
+
         $mform->addElement('hidden', 'id', $COURSE->id);
         $mform->setType('id', PARAM_INT);
 
@@ -159,9 +170,38 @@ class course_reset_form extends moodleform {
             }
         }
 
+        if ($blockfunctions = get_plugin_list_with_function('block', 'reset_course_form_defaults')) {
+            $allassignedblocks = $this->associated_blocks_calculate($COURSE->id);
+            foreach ($allassignedblocks as $block) {
+                $funcname = 'block_'.$block->blockname.'_reset_course_form_defaults';
+                if (array_search($funcname, $blockfunctions) !== false) {
+                    $defaults = $defaults + $funcname($COURSE);
+                }
+            }
+        }
+
         foreach ($defaults as $element=>$default) {
             $mform->setDefault($element, $default);
         }
+    }
+
+    /**
+     * Calculation of course-associated blocks.
+     *
+     * @param int $courseid number of the course whose assigneds are requested
+     * @return array of associated blocks
+     */
+    private function associated_blocks_calculate ($courseid) {
+        global $DB;
+        $coursecontext = $DB->get_record('context', array('instanceid' => $courseid, 'contextlevel' => CONTEXT_COURSE), 'id');
+
+        $instanceids = blocks_get_instanceids_for_context($coursecontext->id, false, CONTEXT_BLOCK);
+        $assignedblocksnames = [];
+        foreach ($instanceids as $instanceid) {
+            $assignedblocksnames = array_merge($assignedblocksnames, $DB->get_records('block_instances',
+                    array('id' => $instanceid), null, 'blockname'));
+        }
+        return $assignedblocksnames;
     }
 
     /**

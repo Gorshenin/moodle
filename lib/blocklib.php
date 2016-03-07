@@ -2558,3 +2558,45 @@ function blocks_add_default_system_blocks() {
     $newcontent = array('lp', 'myoverview');
     $page->blocks->add_blocks(array(BLOCK_POS_RIGHT => $newblocks, 'content' => $newcontent), 'my-index', $subpagepattern);
 }
+
+/**
+ * Get the instanceids for given context.
+ *
+ * @param int $contextid number of the element whose descendants are requested
+ * @param bool $recursive a sign that all descendants of the element are requested on the ascending line
+ * @param object $filter restriction on the type of objects returned (course, block, user, etc)
+ * @return array $instanceids of requested $contextid
+ */
+function blocks_get_instanceids_for_context ($contextid, $recursive = false, $filter = null) {
+    // Object of global database.
+    global $DB;
+    // Array of returning instance ids of given context.
+    $instanceids = [];
+    // If needs all descendants of given context.
+    if ($recursive) {
+        // If needs only one type of returning ids.
+        if ($filter) {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context
+                    WHERE path LIKE ? AND contextlevel = ?", array ("/$contextid/%", "$filter"));
+        } else {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context
+                    WHERE path LIKE ?", array ("/$contextid/%"));
+        }
+
+    } else {
+        // If needs only one type of returning ids.
+        if ($filter) {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context
+                    WHERE path REGEXP ? AND contextlevel = ?", array ("\/$contextid\/[0-9]+$", "$filter"));
+        } else {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context
+                    WHERE path REGEXP ?", array ("\/$contextid\/[0-9]+$"));
+        }
+    }
+
+    foreach ($instanceidclasses as &$instanceidclass) {
+        $instanceids[] = $instanceidclass->instanceid;
+    }
+
+    return $instanceids;
+}
