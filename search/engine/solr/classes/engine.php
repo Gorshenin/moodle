@@ -46,6 +46,11 @@ class engine extends \core_search\engine {
     const AUTOCOMMIT_WITHIN = 15000;
 
     /**
+     * The maximum number of results to fetch at a time.
+     */
+    const QUERY_SIZE = 120;
+
+    /**
      * Highlighting fragsize. Slightly larger than output size (500) to allow for ... appending.
      */
     const FRAG_SIZE = 510;
@@ -81,6 +86,21 @@ class engine extends \core_search\engine {
     protected $highlightfields = array('title', 'content', 'description1', 'description2');
 
     /**
+     * @var int Number of total docs reported by Sorl for the last query.
+     */
+    protected $totalenginedocs = 0;
+
+    /**
+     * @var int Number of docs we have processed for the last query.
+     */
+    protected $processeddocs = 0;
+
+    /**
+     * @var int Number of docs that have been skipped while processing the last query.
+     */
+    protected $skippeddocs = 0;
+
+    /**
      * Initialises the search engine configuration.
      *
      * @return void
@@ -101,29 +121,138 @@ class engine extends \core_search\engine {
      * @throws \core_search\engine_exception
      * @param  stdClass  $filters Containing query and filters.
      * @param  array     $usercontexts Contexts where the user has access. True if the user can access all contexts.
+     * @param  int       $limit The maximum number of results to return.
      * @return \core_search\document[] Results or false if no results
      */
-    public function execute_query($filters, $usercontexts) {
+    public function execute_query($filters, $usercontexts, $limit = 0) {
+        global $USER;
+
+        if (empty($limit)) {
+            $limit = \core_search\manager::MAX_RESULTS;
+        }
+
+        // If there is any problem we trigger the exception as soon as possible.
+        $client = $this->get_search_client();
+
+        // Create the query object.
+        $query = $this->create_user_query($filters, $usercontexts);
+
+        // We expect good match rates, so for our first get, we will get a small number of records.
+        // This significantly speeds solr response time for first few pages.
+        $query->setRows(min($limit * 3, static::QUERY_SIZE));
+        $response = $this->get_query_response($query);
+
+        // Get count data out of the response, and reset our counters.
+        list($included, $found) = $this->get_response_counts($response);
+        $this->totalenginedocs = $found;
+        $this->processeddocs = 0;
+        $this->skippeddocs = 0;
+        if ($included == 0 || $this->totalenginedocs == 0) {
+            // No results.
+            return array();
+        }
+
+        // Get valid documents out of the response.
+        $results = $this->process_response($response, $limit);
+
+        // We have processed all the docs in the response at this point.
+        $this->processeddocs += $included;
+
+        // If we haven't reached the limit, and there are more docs left in Solr, lets keep trying.
+        while (count($results) < $limit && ($this->totalenginedocs - $this->processeddocs) > 0) {
+            // Offset the start of the query, and since we are making another call, get more per call.
+            $query->setStart($this->processeddocs);
+            $query->setRows(static::QUERY_SIZE);
+
+            $response = $this->get_query_response($query);
+            list($included, $found) = $this->get_response_counts($response);
+            if ($included == 0 || $found == 0) {
+                // No new results were found. Found being empty would be weird, so we will just return.
+                return $results;
+            }
+            $this->totalenginedocs = $found;
+
+            // Get the new response docs, limiting to remaining we need, then add it to the end of the results array.
+            $newdocs = $this->process_response($response, $limit - count($results));
+            $results = array_merge($results, $newdocs);
+
+            // Add to our processed docs count.
+            $this->processeddocs += $included;
+        }
+
+        return $results;
+    }
+
+    /**
+     * Takes a query and returns the response in SolrObject format.
+     *
+     * @param  SolrQuery  $query Solr query object.
+     * @return SolrObject|false Response document or false on error.
+     */
+    protected function get_query_response($query) {
+        try {
+            return $this->get_search_client()->query($query)->getResponse();
+        } catch (\SolrClientException $ex) {
+            debugging('Error executing the provided query: ' . $ex->getMessage(), DEBUG_DEVELOPER);
+            $this->queryerror = $ex->getMessage();
+            return false;
+        } catch (\SolrServerException $ex) {
+            debugging('Error executing the provided query: ' . $ex->getMessage(), DEBUG_DEVELOPER);
+            $this->queryerror = $ex->getMessage();
+            return false;
+        }
+    }
+
+    /**
+     * Returns the total number of documents available for the most recently call to execute_query.
+     *
+     * @return int
+     */
+    public function get_query_total_count() {
+        // Return the total engine count minus the docs we have determined are bad.
+        return $this->totalenginedocs - $this->skippeddocs;
+    }
+
+    /**
+     * Returns count information for a provided response. Will return 0, 0 for invalid or empty responses.
+     *
+     * @param SolrDocument $response The response document from Solr.
+     * @return array A two part array. First how many response docs are in the response.
+     *               Second, how many results are vailable in the engine.
+     */
+    protected function get_response_counts($response) {
+        $found = 0;
+        $included = 0;
+
+        if (isset($response->grouped->solr_filegroupingid->ngroups)) {
+            // Get the number of results for file grouped queries.
+            $found = $response->grouped->solr_filegroupingid->ngroups;
+            $included = count($response->grouped->solr_filegroupingid->groups);
+        } else if (isset($response->response->numFound)) {
+            // Get the number of results for standard queries.
+            $found = $response->response->numFound;
+            $included = count($response->response->docs);
+        }
+
+        return array($included, $found);
+    }
+
+    /**
+     * Prepares a new query object with needed limits, filters, etc.
+     *
+     * @param stdClass  $filters Containing query and filters.
+     * @param array     $usercontexts Contexts where the user has access. True if the user can access all contexts.
+     * @return SolrDisMaxQuery
+     */
+    protected function create_user_query($filters, $usercontexts) {
         global $USER;
 
         // Let's keep these changes internal.
         $data = clone $filters;
 
-        // If there is any problem we trigger the exception as soon as possible.
-        $client = $this->get_search_client();
+        $query = new \SolrDisMaxQuery();
 
-        $serverstatus = $this->is_server_ready();
-        if ($serverstatus !== true) {
-            throw new \core_search\engine_exception('engineserverstatus', 'search');
-        }
-
-        $query = new \SolrQuery();
-        $maxrows = \core_search\manager::MAX_RESULTS;
-        if ($this->file_indexing_enabled()) {
-            // When using file indexing and grouping, we are going to collapse results, so we want extra results.
-            $maxrows *= 2;
-        }
-        $this->set_query($query, $data->q, $maxrows);
+        $this->set_query($query, $data->q);
         $this->add_fields($query);
 
         // Search filters applied, we don't cache these filters as we don't want to pollute the cache with tmp filters
@@ -131,9 +260,12 @@ class engine extends \core_search\engine {
         if (!empty($data->title)) {
             $query->addFilterQuery('{!field cache=false f=title}' . $data->title);
         }
-        if (!empty($data->areaid)) {
-            // Even if it is only supposed to contain PARAM_ALPHANUMEXT, better to prevent.
-            $query->addFilterQuery('{!field cache=false f=areaid}' . $data->areaid);
+        if (!empty($data->areaids)) {
+            // If areaids are specified, we want to get any that match.
+            $query->addFilterQuery('{!cache=false}areaid:(' . implode(' OR ', $data->areaids) . ')');
+        }
+        if (!empty($data->courseids)) {
+            $query->addFilterQuery('{!cache=false}courseid:(' . implode(' OR ', $data->courseids) . ')');
         }
 
         if (!empty($data->timestart) or !empty($data->timeend)) {
@@ -159,54 +291,46 @@ class engine extends \core_search\engine {
         // If the user can access all contexts $usercontexts value is just true, we don't need to filter
         // in that case.
         if ($usercontexts && is_array($usercontexts)) {
-            if (!empty($data->areaid)) {
-                $query->addFilterQuery('contextid:(' . implode(' OR ', $usercontexts[$data->areaid]) . ')');
-            } else {
-                // Join all area contexts into a single array and implode.
-                $allcontexts = array();
-                foreach ($usercontexts as $areacontexts) {
-                    foreach ($areacontexts as $contextid) {
-                        // Ensure they are unique.
-                        $allcontexts[$contextid] = $contextid;
-                    }
+            // Join all area contexts into a single array and implode.
+            $allcontexts = array();
+            foreach ($usercontexts as $areaid => $areacontexts) {
+                if (!empty($data->areaids) && !in_array($areaid, $data->areaids)) {
+                    // Skip unused areas.
+                    continue;
                 }
-                $query->addFilterQuery('contextid:(' . implode(' OR ', $allcontexts) . ')');
+                foreach ($areacontexts as $contextid) {
+                    // Ensure they are unique.
+                    $allcontexts[$contextid] = $contextid;
+                }
             }
+            if (empty($allcontexts)) {
+                // This means there are no valid contexts for them, so they get no results.
+                return array();
+            }
+            $query->addFilterQuery('contextid:(' . implode(' OR ', $allcontexts) . ')');
         }
 
-        try {
-            if ($this->file_indexing_enabled()) {
-                // Now group records by solr_filegroupingid. Limit to 3 results per group.
-                $query->setGroup(true);
-                $query->setGroupLimit(3);
-                $query->addGroupField('solr_filegroupingid');
-                return $this->grouped_files_query_response($client->query($query));
-            } else {
-                return $this->query_response($client->query($query));
-            }
-        } catch (\SolrClientException $ex) {
-            debugging('Error executing the provided query: ' . $ex->getMessage(), DEBUG_DEVELOPER);
-            $this->queryerror = $ex->getMessage();
-            return array();
-        } catch (\SolrServerException $ex) {
-            debugging('Error executing the provided query: ' . $ex->getMessage(), DEBUG_DEVELOPER);
-            $this->queryerror = $ex->getMessage();
-            return array();
+        if ($this->file_indexing_enabled()) {
+            // Now group records by solr_filegroupingid. Limit to 3 results per group.
+            $query->setGroup(true);
+            $query->setGroupLimit(3);
+            $query->setGroupNGroups(true);
+            $query->addGroupField('solr_filegroupingid');
+        } else {
+            // Make sure we only get text files, in case the index has pre-existing files.
+            $query->addFilterQuery('type:'.\core_search\manager::TYPE_TEXT);
         }
 
+        return $query;
     }
 
     /**
      * Prepares a new query by setting the query, start offset and rows to return.
+     *
      * @param SolrQuery $query
      * @param object    $q Containing query and filters.
-     * @param null|int  $maxresults The number of results to limit. manager::MAX_RESULTS if not set.
      */
-    protected function set_query($query, $q, $maxresults = null) {
-        if (!is_numeric($maxresults)) {
-            $maxresults = \core_search\manager::MAX_RESULTS;
-        }
-
+    protected function set_query($query, $q) {
         // Set hightlighting.
         $query->setHighlight(true);
         foreach ($this->highlightfields as $field) {
@@ -220,19 +344,29 @@ class engine extends \core_search\engine {
         $query->setQuery($q);
 
         // A reasonable max.
-        $query->setRows($maxresults);
+        $query->setRows(static::QUERY_SIZE);
     }
 
     /**
      * Sets fields to be returned in the result.
      *
-     * @param SolrQuery $query object.
+     * @param SolrDisMaxQuery|SolrQuery $query object.
      */
     public function add_fields($query) {
         $documentclass = $this->get_document_classname();
-        $fields = array_keys($documentclass::get_default_fields_definition());
-        foreach ($fields as $field) {
-            $query->addField($field);
+        $fields = $documentclass::get_default_fields_definition();
+
+        $dismax = false;
+        if ($query instanceof \SolrDisMaxQuery) {
+            $dismax = true;
+        }
+
+        foreach ($fields as $key => $field) {
+            $query->addField($key);
+            if ($dismax && !empty($field['mainquery'])) {
+                // Add fields the main query should be run against.
+                $query->addQueryField($key);
+            }
         }
     }
 
@@ -282,22 +416,32 @@ class engine extends \core_search\engine {
     /**
      * Filters the response on Moodle side.
      *
-     * @param object $queryresponse containing the response return from solr server.
+     * @param SolrObject $response Solr object containing the response return from solr server.
+     * @param int        $limit The maximum number of results to return. 0 for all.
+     * @param bool       $skipaccesscheck Don't use check_access() on results. Only to be used when results have known access.
      * @return array $results containing final results to be displayed.
      */
-    public function query_response($queryresponse) {
+    protected function process_response($response, $limit = 0, $skipaccesscheck = false) {
         global $USER;
+
+        if (empty($response)) {
+            return array();
+        }
+
+        if (isset($response->grouped)) {
+            return $this->grouped_files_process_response($response, $limit);
+        }
 
         $userid = $USER->id;
         $noownerid = \core_search\manager::NO_OWNER_ID;
 
-        $response = $queryresponse->getResponse();
         $numgranted = 0;
 
         if (!$docs = $response->response->docs) {
             return array();
         }
 
+        $out = array();
         if (!empty($response->response->numFound)) {
             $this->add_highlight_content($response);
 
@@ -305,54 +449,56 @@ class engine extends \core_search\engine {
             foreach ($docs as $key => $docdata) {
                 if ($docdata['owneruserid'] != $noownerid && $docdata['owneruserid'] != $userid) {
                     // If owneruserid is set, no other user should be able to access this record.
-                    unset($docs[$key]);
                     continue;
                 }
 
                 if (!$searcharea = $this->get_search_area($docdata->areaid)) {
-                    unset($docs[$key]);
                     continue;
                 }
 
                 $docdata = $this->standarize_solr_obj($docdata);
 
-                $access = $searcharea->check_access($docdata['itemid']);
+                if ($skipaccesscheck) {
+                    $access = \core_search\manager::ACCESS_GRANTED;
+                } else {
+                    $access = $searcharea->check_access($docdata['itemid']);
+                }
                 switch ($access) {
                     case \core_search\manager::ACCESS_DELETED:
                         $this->delete_by_id($docdata['id']);
-                        unset($docs[$key]);
+                        // Remove one from our processed and total counters, since we promptly deleted.
+                        $this->processeddocs--;
+                        $this->totalenginedocs--;
                         break;
                     case \core_search\manager::ACCESS_DENIED:
-                        unset($docs[$key]);
+                        $this->skippeddocs++;
                         break;
                     case \core_search\manager::ACCESS_GRANTED:
                         $numgranted++;
 
                         // Add the doc.
-                        $docs[$key] = $this->to_document($searcharea, $docdata);
+                        $out[] = $this->to_document($searcharea, $docdata);
                         break;
                 }
 
-                // This should never happen.
-                if ($numgranted >= \core_search\manager::MAX_RESULTS) {
-                    $docs = array_slice($docs, 0, \core_search\manager::MAX_RESULTS, true);
+                // Stop when we hit our limit.
+                if (!empty($limit) && count($out) >= $limit) {
                     break;
                 }
             }
         }
 
-        return $docs;
+        return $out;
     }
 
     /**
      * Processes grouped file results into documents, with attached matching files.
      *
-     * @param SolrQueryResponse $queryresponse The response returned from solr server
+     * @param SolrObject $response The response returned from solr server
+     * @param int        $limit The maximum number of results to return. 0 for all.
      * @return array Final results to be displayed.
      */
-    protected function grouped_files_query_response($queryresponse) {
-        $response = $queryresponse->getResponse();
-
+    protected function grouped_files_process_response($response, $limit = 0) {
         // If we can't find the grouping, or there are no matches in the grouping, return empty.
         if (!isset($response->grouped->solr_filegroupingid) || empty($response->grouped->solr_filegroupingid->matches)) {
             return array();
@@ -383,10 +529,14 @@ class engine extends \core_search\engine {
                 case \core_search\manager::ACCESS_DELETED:
                     // If deleted from Moodle, delete from index and then continue.
                     $this->delete_by_id($firstdoc->id);
+                    // Remove one from our processed and total counters, since we promptly deleted.
+                    $this->processeddocs--;
+                    $this->totalenginedocs--;
                     continue 2;
                     break;
                 case \core_search\manager::ACCESS_DENIED:
                     // This means we should just skip for the current user.
+                    $this->skippeddocs++;
                     continue 2;
                     break;
             }
@@ -423,7 +573,7 @@ class engine extends \core_search\engine {
                 $completedocs[$groupid] = $doc;
             }
 
-            if ($numgranted >= \core_search\manager::MAX_RESULTS) {
+            if (!empty($limit) && $numgranted >= $limit) {
                 // We have hit the max results, we will just ignore the rest.
                 break;
             }
@@ -464,17 +614,14 @@ class engine extends \core_search\engine {
 
         // Build a custom query that will get all the missing documents.
         $query = new \SolrQuery();
-        $this->set_query($query, '*', count($docids));
+        $this->set_query($query, '*');
         $this->add_fields($query);
+        $query->setRows(count($docids));
         $query->addFilterQuery('{!cache=false}id:(' . implode(' OR ', $docids) . ')');
 
-        try {
-            $results = $this->query_response($this->get_search_client()->query($query));
-        } catch (\SolrClientException $ex) {
-            return array();
-        } catch (\SolrServerException $ex) {
-            return array();
-        }
+        $response = $this->get_query_response($query);
+        // We know the missing docs have already been checked for access, so don't recheck.
+        $results = $this->process_response($response, 0, true);
 
         $out = array();
         foreach ($results as $result) {
@@ -598,7 +745,7 @@ class engine extends \core_search\engine {
                     if (isset($files[$fileid])) {
                         // Check for changes that would mean we need to re-index the file. If so, just leave in $files.
                         // Filelib does not guarantee time modified is updated, so we will check important values.
-                        if ($indexedfile->modified < $files[$fileid]->get_timemodified()) {
+                        if ($indexedfile->modified != $files[$fileid]->get_timemodified()) {
                             continue;
                         }
                         if (strcmp($indexedfile->title, $files[$fileid]->get_filename()) !== 0) {
@@ -607,7 +754,7 @@ class engine extends \core_search\engine {
                         if ($indexedfile->solr_filecontenthash != $files[$fileid]->get_contenthash()) {
                             continue;
                         }
-                        if ($indexedfile->solr_fileindexedcontent == document::INDEXED_FILE_FALSE &&
+                        if ($indexedfile->solr_fileindexstatus == document::INDEXED_FILE_FALSE &&
                                 $this->file_is_indexable($files[$fileid])) {
                             // This means that the last time we indexed this file, filtering blocked it.
                             // Current settings say it is indexable, so we will allow it to be indexed.
@@ -671,30 +818,17 @@ class engine extends \core_search\engine {
         $query->addField('title');
         $query->addField('solr_fileid');
         $query->addField('solr_filecontenthash');
-        $query->addField('solr_fileindexedcontent');
+        $query->addField('solr_fileindexstatus');
 
         $query->addFilterQuery('{!cache=false}solr_filegroupingid:(' . $document->get('id') . ')');
         $query->addFilterQuery('type:' . \core_search\manager::TYPE_FILE);
 
-        try {
-            $response = $this->get_search_client()->query($query);
-            $responsedoc = $response->getResponse();
-
-            if (empty($responsedoc->response->numFound)) {
-                return array(0, array());
-            }
-            $numfound = $responsedoc->response->numFound;
-
-            return array($numfound, $this->convert_file_results($responsedoc));
-        } catch (\SolrClientException $ex) {
-            debugging('Error executing the provided query: ' . $ex->getMessage(), DEBUG_DEVELOPER);
-            $this->queryerror = $ex->getMessage();
-            return array(0, array());
-        } catch (\SolrServerException $ex) {
-            debugging('Error executing the provided query: ' . $ex->getMessage(), DEBUG_DEVELOPER);
-            $this->queryerror = $ex->getMessage();
+        $response = $this->get_query_response($query);
+        if (empty($response->response->numFound)) {
             return array(0, array());
         }
+
+        return array($response->response->numFound, $this->convert_file_results($response));
     }
 
     /**
@@ -718,7 +852,7 @@ class engine extends \core_search\engine {
             $result->title = $doc->title;
             $result->solr_fileid = $doc->solr_fileid;
             $result->solr_filecontenthash = $doc->solr_filecontenthash;
-            $result->solr_fileindexedcontent = $doc->solr_fileindexedcontent;
+            $result->solr_fileindexstatus = $doc->solr_fileindexstatus;
             $out[] = $result;
         }
 
@@ -741,7 +875,7 @@ class engine extends \core_search\engine {
 
         if (!$this->file_is_indexable($storedfile)) {
             // For files that we don't consider indexable, we will still place a reference in the search engine.
-            $filedoc['solr_fileindexedcontent'] = document::INDEXED_FILE_FALSE;
+            $filedoc['solr_fileindexstatus'] = document::INDEXED_FILE_FALSE;
             $this->add_solr_document($filedoc);
             return;
         }
@@ -752,6 +886,11 @@ class engine extends \core_search\engine {
 
         // This will prevent solr from automatically making fields for every tika output.
         $url->param('uprefix', 'ignored_');
+
+        // Control how content is captured. This will keep our file content clean of non-important metadata.
+        $url->param('captureAttr', 'true');
+        // Move the content to a field for indexing.
+        $url->param('fmap.content', 'solr_filecontent');
 
         // These are common fields that matches the standard *_point dynamic field and causes an error.
         $url->param('fmap.media_white_point', 'ignored_mwp');
@@ -822,7 +961,7 @@ class engine extends \core_search\engine {
         }
 
         // If we get here, the document was not indexed due to an error. So we will index just the base info without the file.
-        $filedoc['solr_fileindexedcontent'] = document::INDEXED_FILE_ERROR;
+        $filedoc['solr_fileindexstatus'] = document::INDEXED_FILE_ERROR;
         $this->add_solr_document($filedoc);
     }
 
@@ -862,7 +1001,7 @@ class engine extends \core_search\engine {
      *
      * Return false to prevent the search area completed time and stats from being updated.
      *
-     * @param \core_search\area\base $searcharea The search area that was complete
+     * @param \core_search\base $searcharea The search area that was complete
      * @param int $numdocs The number of documents that were added to the index
      * @param bool $fullindex True if a full index is being performed
      * @return bool True means that data is considered indexed
@@ -925,6 +1064,29 @@ class engine extends \core_search\engine {
      */
     public function is_server_ready() {
 
+        $configured = $this->is_server_configured();
+        if ($configured !== true) {
+            return $configured;
+        }
+
+        // Check that the schema is already set up.
+        try {
+            $schema = new \search_solr\schema();
+            $schema->validate_setup();
+        } catch (\moodle_exception $e) {
+            return $e->getMessage();
+        }
+
+        return true;
+    }
+
+    /**
+     * Is the solr server properly configured?.
+     *
+     * @return true|string Returns true if all good or an error string.
+     */
+    public function is_server_configured() {
+
         if (empty($this->config->server_hostname) || empty($this->config->indexname)) {
             return 'No solr configuration found';
         }
@@ -934,22 +1096,33 @@ class engine extends \core_search\engine {
         }
 
         try {
-            @$client->ping();
+            if ($this->get_solr_major_version() < 4) {
+                // Minimum solr 4.0.
+                return get_string('minimumsolr4', 'search_solr');
+            }
         } catch (\SolrClientException $ex) {
-            return 'Solr client error: ' . $ex->getMessage();
+            debugging('Solr client error: ' . html_to_text($ex->getMessage()), DEBUG_DEVELOPER);
+            return get_string('engineserverstatus', 'search');
         } catch (\SolrServerException $ex) {
-            return 'Solr server error: ' . $ex->getMessage();
-        }
-
-        // Check that setup schema has already run.
-        try {
-            $schema = new \search_solr\schema();
-            $schema->validate_setup();
-        } catch (\moodle_exception $e) {
-            return $e->getMessage();
+            debugging('Solr server error: ' . html_to_text($ex->getMessage()), DEBUG_DEVELOPER);
+            return get_string('engineserverstatus', 'search');
         }
 
         return true;
+    }
+
+    /**
+     * Returns the solr server major version.
+     *
+     * @return int
+     */
+    public function get_solr_major_version() {
+        // We should really ping first the server to see if the specified indexname is valid but
+        // we want to minimise solr server requests as they are expensive. system() emits a warning
+        // if it can not connect to the configured index in the configured server.
+        $systemdata = @$this->get_search_client()->system();
+        $solrversion = $systemdata->getResponse()->offsetGet('lucene')->offsetGet('solr-spec-version');
+        return intval(substr($solrversion, 0, strpos($solrversion, '.')));
     }
 
     /**
@@ -991,6 +1164,10 @@ class engine extends \core_search\engine {
             'ssl_capath' => !empty($this->config->ssl_capath) ? $this->config->ssl_capath : '',
             'timeout' => !empty($this->config->server_timeout) ? $this->config->server_timeout : '30'
         );
+
+        if (!class_exists('\SolrClient')) {
+            throw new \core_search\engine_exception('enginenotinstalled', 'search', '', 'solr');
+        }
 
         $client = new \SolrClient($options);
 
@@ -1047,7 +1224,7 @@ class engine extends \core_search\engine {
 
         if (!empty($this->config->server_username) && !empty($this->config->server_password)) {
             $authorization = $this->config->server_username . ':' . $this->config->server_password;
-            $this->curl->setHeader('Authorization', 'Basic ' . base64_encode($authorization));
+            $this->curl->setHeader('Authorization: Basic ' . base64_encode($authorization));
         }
 
         return $this->curl;

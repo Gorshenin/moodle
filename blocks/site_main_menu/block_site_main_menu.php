@@ -59,7 +59,7 @@ class block_site_main_menu extends block_list {
             if (!empty($modinfo->sections[0])) {
                 foreach($modinfo->sections[0] as $cmid) {
                     $cm = $modinfo->cms[$cmid];
-                    if (!$cm->uservisible) {
+                    if (!$cm->uservisible || !$cm->is_visible_on_course_page()) {
                         continue;
                     }
 
@@ -72,10 +72,10 @@ class block_site_main_menu extends block_list {
                     if (!empty($cm->url)) {
                         $content = html_writer::div($courserenderer->course_section_cm_name($cm), 'activity');
                     } else {
-                        $content = $cm->get_formatted_content(array('overflowdiv' => true, 'noclean' => true));
+                        $content = $courserenderer->course_section_cm_text($cm);
                     }
 
-                    $this->content->items[] = $indent . $content;
+                    $this->content->items[] = $indent . html_writer::div($content, 'main-menu-content');
                 }
             }
             return $this->content;
@@ -103,7 +103,7 @@ class block_site_main_menu extends block_list {
         if (!empty($modinfo->sections[0])) {
             foreach ($modinfo->sections[0] as $modnumber) {
                 $mod = $modinfo->cms[$modnumber];
-                if (!$mod->uservisible) {
+                if (!$mod->uservisible || !$mod->is_visible_on_course_page()) {
                     continue;
                 }
                 if (!$ismoving) {
@@ -138,11 +138,11 @@ class block_site_main_menu extends block_list {
                         $indent = '';
                     }
                     if (!$mod->url) {
-                        $content = $mod->get_formatted_content(array('overflowdiv' => true, 'noclean' => true));
+                        $content = $courserenderer->course_section_cm_text($mod);
                     } else {
                         $content = html_writer::div($courserenderer->course_section_cm_name($mod), ' activity');
                     }
-                    $this->content->items[] = $indent. $content . $editbuttons;
+                    $this->content->items[] = $indent . html_writer::div($content . $editbuttons, 'main-menu-content');
                 }
             }
         }

@@ -131,9 +131,11 @@ function xmldb_main_install() {
         'filterall'             => 0, // setting page, so have to be initialised here.
         'texteditors'           => 'atto,tinymce,textarea',
         'antiviruses'           => '',
+        'media_plugins_sortorder' => 'videojs,youtube,swf',
         'upgrade_minmaxgradestepignored' => 1, // New installs should not run this upgrade step.
         'upgrade_extracreditweightsstepignored' => 1, // New installs should not run this upgrade step.
         'upgrade_calculatedgradeitemsignored' => 1, // New installs should not run this upgrade step.
+        'upgrade_letterboundarycourses' => 1, // New installs should not run this upgrade step.
     );
     foreach($defaults as $key => $value) {
         set_config($key, $value);
@@ -315,4 +317,8 @@ function xmldb_main_install() {
     set_config('shortanswer_sortorder', 4, 'question');
     set_config('numerical_sortorder', 5, 'question');
     set_config('essay_sortorder', 6, 'question');
+
+    require_once($CFG->libdir . '/db/upgradelib.php');
+    make_default_scale();
+    make_competence_scale();
 }

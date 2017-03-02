@@ -74,7 +74,7 @@ class behat_admin extends behat_base {
             $exception = new ElementNotFoundException($this->getSession(), '"' . $label . '" administration setting ');
 
             // The argument should be converted to an xpath literal.
-            $label = $this->getSession()->getSelectorsHandler()->xpathLiteral($label);
+            $label = behat_context_helper::escape($label);
 
             // Single element settings.
             try {
@@ -89,8 +89,10 @@ class behat_admin extends behat_base {
             } catch (ElementNotFoundException $e) {
 
                 // Multi element settings, interacting only the first one.
-                $fieldxpath = "//*[label[.= $label]|span[.= $label]]/ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' form-item ')]" .
-                    "/descendant::div[@class='form-group']/descendant::*[self::input | self::textarea | self::select][not(./@type = 'submit' or ./@type = 'image' or ./@type = 'hidden')]";
+                $fieldxpath = "//*[label[normalize-space(.)= $label]|span[normalize-space(.)= $label]]/" .
+                    "ancestor::div[contains(concat(' ', normalize-space(@class), ' '), ' form-item ')]" .
+                    "/descendant::div[@class='form-group']/descendant::*[self::input | self::textarea | self::select]" .
+                    "[not(./@type = 'submit' or ./@type = 'image' or ./@type = 'hidden')]";
                 $fieldnode = $this->find('xpath', $fieldxpath);
 
                 // It is the same one that contains the type.

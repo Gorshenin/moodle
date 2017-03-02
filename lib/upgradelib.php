@@ -371,9 +371,17 @@ function upgrade_stale_php_files_present() {
     global $CFG;
 
     $someexamplesofremovedfiles = array(
+        // Removed in 3.2.
+        '/calendar/preferences.php',
+        '/lib/alfresco/',
+        '/lib/jquery/jquery-1.12.1.min.js',
+        '/lib/password_compat/tests/',
+        '/lib/phpunit/classes/unittestcase.php',
         // Removed in 3.1.
-        '/repository/boxnet/migrationv1.php',
-        '/repository/boxnet/cli/migrationv1.php',
+        '/lib/classes/log/sql_internal_reader.php',
+        '/lib/zend/',
+        '/mod/forum/pix/icon.gif',
+        '/tag/templates/tagname.mustache',
         // Removed in 3.0.
         '/mod/lti/grade.php',
         '/tag/coursetagslib.php',
@@ -1235,7 +1243,7 @@ function external_update_descriptions($component) {
 }
 
 /**
- * Allow plugins to add external functions to other plugins or core services.
+ * Allow plugins and subsystems to add external functions to other plugins or built-in services.
  * This function is executed just after all the plugins have been updated.
  */
 function external_update_services() {
@@ -1524,7 +1532,9 @@ function print_upgrade_part_end($plugin, $installation, $verbose) {
         }
     }
     if ($verbose) {
-        echo $OUTPUT->notification(get_string('success'), 'notifysuccess');
+        $notification = new \core\output\notification(get_string('success'), \core\output\notification::NOTIFY_SUCCESS);
+        $notification->set_show_closebutton(false);
+        echo $OUTPUT->render($notification);
         print_upgrade_separator();
     }
 }
@@ -1737,7 +1747,8 @@ function upgrade_noncore($verbose) {
         foreach ($plugintypes as $type=>$location) {
             upgrade_plugins($type, 'print_upgrade_part_start', 'print_upgrade_part_end', $verbose);
         }
-        // Upgrade services. This function gives plugins a chance to add functions to existing core or non-core services.
+        // Upgrade services.
+        // This function gives plugins and subsystems a chance to add functions to existing built-in services.
         external_update_services();
 
         // Update cache definitions. Involves scanning each plugin for any changes.
@@ -2278,4 +2289,102 @@ function upgrade_install_plugins(array $installable, $confirmed, $heading='', $c
         echo $output->footer();
         die();
     }
+}
+/**
+ * Method used to check the installed unoconv version.
+ *
+ * @param environment_results $result object to update, if relevant.
+ * @return environment_results|null updated results or null if unoconv path is not executable.
+ */
+function check_unoconv_version(environment_results $result) {
+    global $CFG;
+
+    if (!during_initial_install() && !empty($CFG->pathtounoconv) && file_is_executable(trim($CFG->pathtounoconv))) {
+        $currentversion = 0;
+        $supportedversion = 0.7;
+        $unoconvbin = \escapeshellarg($CFG->pathtounoconv);
+        $command = "$unoconvbin --version";
+        exec($command, $output);
+
+        // If the command execution returned some output, then get the unoconv version.
+        if ($output) {
+            foreach ($output as $response) {
+                if (preg_match('/unoconv (\\d+\\.\\d+)/', $response, $matches)) {
+                    $currentversion = (float)$matches[1];
+                }
+            }
+        }
+
+        if ($currentversion < $supportedversion) {
+            $result->setInfo('unoconv version not supported');
+            $result->setStatus(false);
+            return $result;
+        }
+    }
+    return null;
+}
+
+/**
+ * Checks for up-to-date TLS libraries. NOTE: this is not currently used, see MDL-57262.
+ *
+ * @param environment_results $result object to update, if relevant.
+ * @return environment_results|null updated results or null if unoconv path is not executable.
+ */
+function check_tls_libraries(environment_results $result) {
+    global $CFG;
+
+    if (!function_exists('curl_version')) {
+        $result->setInfo('cURL PHP extension is not installed');
+        $result->setStatus(false);
+        return $result;
+    }
+
+    if (!\core\upgrade\util::validate_php_curl_tls(curl_version(), PHP_ZTS)) {
+        $result->setInfo('invalid ssl/tls configuration');
+        $result->setStatus(false);
+        return $result;
+    }
+
+    if (!\core\upgrade\util::can_use_tls12(curl_version(), php_uname('r'))) {
+        $result->setInfo('ssl/tls configuration not supported');
+        $result->setStatus(false);
+        return $result;
+    }
+
+    return null;
+}
+
+/**
+ * Check if recommended version of libcurl is installed or not.
+ *
+ * @param environment_results $result object to update, if relevant.
+ * @return environment_results|null updated results or null.
+ */
+function check_libcurl_version(environment_results $result) {
+
+    if (!function_exists('curl_version')) {
+        $result->setInfo('cURL PHP extension is not installed');
+        $result->setStatus(false);
+        return $result;
+    }
+
+    // Supported version and version number.
+    $supportedversion = 0x071304;
+    $supportedversionstring = "7.19.4";
+
+    // Installed version.
+    $curlinfo = curl_version();
+    $currentversion = $curlinfo['version_number'];
+
+    if ($currentversion < $supportedversion) {
+        // Test fail.
+        // Set info, we want to let user know how to resolve the problem.
+        $result->setInfo('Libcurl version check');
+        $result->setNeededVersion($supportedversionstring);
+        $result->setCurrentVersion($curlinfo['version']);
+        $result->setStatus(false);
+        return $result;
+    }
+
+    return null;
 }

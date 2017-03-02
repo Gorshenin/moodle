@@ -111,6 +111,7 @@ class webservice {
 
         // setup user session to check capability
         \core\session\manager::set_user($user);
+        set_login_session_preferences();
 
         //assumes that if sid is set then there must be a valid associated session no matter the token type
         if ($token->sid) {
@@ -120,9 +121,9 @@ class webservice {
             }
         }
 
-        //Non admin can not authenticate if maintenance mode
-        $hassiteconfig = has_capability('moodle/site:config', context_system::instance(), $user);
-        if (!empty($CFG->maintenance_enabled) and !$hassiteconfig) {
+        // Cannot authenticate unless maintenance access is granted.
+        $hasmaintenanceaccess = has_capability('moodle/site:maintenanceaccess', context_system::instance(), $user);
+        if (!empty($CFG->maintenance_enabled) and !$hasmaintenanceaccess) {
             //this is usually temporary, client want to implement code logic  => moodle_exception
             throw new moodle_exception('sitemaintenance', 'admin');
         }
@@ -340,6 +341,7 @@ class webservice {
                     $newtoken->contextid = context_system::instance()->id;
                     $newtoken->creatorid = $userid;
                     $newtoken->timecreated = time();
+                    $newtoken->privatetoken = null;
 
                     $DB->insert_record('external_tokens', $newtoken);
                 }
@@ -422,6 +424,16 @@ class webservice {
     }
 
     /**
+     * Delete all the tokens belonging to a user.
+     *
+     * @param int $userid the user id whose tokens must be deleted
+     */
+    public static function delete_user_ws_tokens($userid) {
+        global $DB;
+        $DB->delete_records('external_tokens', array('userid' => $userid));
+    }
+
+    /**
      * Delete a service
      * Also delete function references and authorised user references.
      *
@@ -460,7 +472,8 @@ class webservice {
                       FROM {external_functions} f
                      WHERE f.name IN (SELECT sf.functionname
                                         FROM {external_services_functions} sf
-                                       WHERE sf.externalserviceid $serviceids)";
+                                       WHERE sf.externalserviceid $serviceids)
+                     ORDER BY f.name ASC";
             $functions = $DB->get_records_sql($sql, $params);
         } else {
             $functions = array();
@@ -518,21 +531,20 @@ class webservice {
      * Example of returned value:
      *  Array
      *  (
-     *    [moodle_group_create_groups] => Array
+     *    [core_group_create_groups] => Array
      *    (
      *       [0] => moodle/course:managegroups
      *    )
      *
-     *    [moodle_enrol_get_enrolled_users] => Array
+     *    [core_enrol_get_enrolled_users] => Array
      *    (
-     *       [0] => moodle/site:viewparticipants
-     *       [1] => moodle/course:viewparticipants
-     *       [2] => moodle/role:review
-     *       [3] => moodle/site:accessallgroups
-     *       [4] => moodle/course:enrolreview
+     *       [0] => moodle/user:viewdetails
+     *       [1] => moodle/user:viewhiddendetails
+     *       [2] => moodle/course:useremail
+     *       [3] => moodle/user:update
+     *       [4] => moodle/site:accessallgroups
      *    )
      *  )
-     *
      * @param int $serviceid service id
      * @return array
      */
@@ -726,7 +738,22 @@ class webservice {
 
     }
 
+    /**
+     * Return a list with all the valid user tokens for the given user, it only excludes expired tokens.
+     *
+     * @param  string $userid user id to retrieve tokens from
+     * @return array array of token entries
+     * @since Moodle 3.2
+     */
+    public static function get_active_tokens($userid) {
+        global $DB;
 
+        $sql = 'SELECT t.*, s.name as servicename FROM {external_tokens} t JOIN
+                {external_services} s ON t.externalserviceid = s.id WHERE
+                t.userid = :userid AND (t.validuntil IS NULL OR t.validuntil > :now)';
+        $params = array('userid' => $userid, 'now' => time());
+        return $DB->get_records_sql($sql, $params);
+    }
 }
 
 /**
@@ -914,9 +941,9 @@ abstract class webservice_server implements webservice_server_interface {
             $user = $this->authenticate_by_token(EXTERNAL_TOKEN_EMBEDDED);
         }
 
-        //Non admin can not authenticate if maintenance mode
-        $hassiteconfig = has_capability('moodle/site:config', context_system::instance(), $user);
-        if (!empty($CFG->maintenance_enabled) and !$hassiteconfig) {
+        // Cannot authenticate unless maintenance access is granted.
+        $hasmaintenanceaccess = has_capability('moodle/site:maintenanceaccess', context_system::instance(), $user);
+        if (!empty($CFG->maintenance_enabled) and !$hasmaintenanceaccess) {
             throw new moodle_exception('sitemaintenance', 'admin');
         }
 
@@ -991,6 +1018,7 @@ abstract class webservice_server implements webservice_server_interface {
         // now fake user login, the session is completely empty too
         enrol_check_plugins($user);
         \core\session\manager::set_user($user);
+        set_login_session_preferences();
         $this->userid = $user->id;
 
         if ($this->authmethod != WEBSERVICE_AUTHMETHOD_SESSION_TOKEN && !has_capability("webservice/$this->wsname:use", $this->restricted_context)) {
@@ -1246,7 +1274,7 @@ abstract class webservice_base_server extends webservice_server {
         }
 
         // function must exist
-        $function = external_function_info($this->functionname);
+        $function = external_api::external_function_info($this->functionname);
 
         if ($this->restricted_serviceid) {
             $params = array('sid1'=>$this->restricted_serviceid, 'sid2'=>$this->restricted_serviceid);
@@ -1475,7 +1503,7 @@ EOD;
      * @throws moodle_exception
      */
     protected function get_virtual_method_code($function) {
-        $function = external_function_info($function);
+        $function = external_api::external_function_info($function);
 
         // Parameters and their defaults for the method signature.
         $paramanddefaults = array();

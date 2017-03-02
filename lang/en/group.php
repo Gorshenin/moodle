@@ -107,7 +107,7 @@ $string['groupmembersselected'] = 'Members of selected group';
 $string['groupmode'] = 'Group mode';
 $string['groupmode_help'] = 'This setting has 3 options:
 
-* No groups - There are no sub groups, everyone is part of one big community
+* No groups
 * Separate groups - Each group member can only see their own group, others are invisible
 * Visible groups - Each group member works in their own group, but can also see other groups
 
@@ -140,7 +140,7 @@ $string['importgroups_help'] = 'Groups may be imported via text file. The format
 * Optional fieldnames are description, enrolmentkey, picture, hidepicture';
 $string['importgroups_link'] = 'group/import';
 $string['includeonlyactiveenrol'] = 'Include only active enrolments';
-$string['includeonlyactiveenrol_help'] = 'This setting determines if only active enrolled users will be included in the groups. If enabled, suspended users will not be included in groups.';
+$string['includeonlyactiveenrol_help'] = 'If enabled, suspended users will not be included in groups.';
 $string['javascriptrequired'] = 'This page requires JavaScript to be enabled.';
 $string['members'] = 'Members per group';
 $string['membersofselectedgroup'] = 'Members of:';

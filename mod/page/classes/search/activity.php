@@ -33,7 +33,7 @@ defined('MOODLE_INTERNAL') || die();
  * @copyright  2015 David Monllao {@link http://www.davidmonllao.com}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class activity extends \core_search\area\base_activity {
+class activity extends \core_search\base_activity {
 
 
     /**
@@ -64,7 +64,7 @@ class activity extends \core_search\area\base_activity {
 
         // Prepare associative array with data from DB.
         $doc = \core_search\document_factory::instance($record->id, $this->componentname, $this->areaname);
-        $doc->set('title', $record->name);
+        $doc->set('title', content_to_text($record->name, false));
         $doc->set('content', content_to_text($record->content, $record->contentformat));
         $doc->set('contextid', $context->id);
         $doc->set('courseid', $record->course);

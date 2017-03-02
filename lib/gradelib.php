@@ -382,7 +382,17 @@ function grade_regrade_final_grades_if_required($course, callable $callback = nu
         echo $OUTPUT->header();
         echo $OUTPUT->heading(get_string('recalculatinggrades', 'grades'));
         $progress = new \core\progress\display(true);
-        grade_regrade_final_grades($course->id, null, null, $progress);
+        $status = grade_regrade_final_grades($course->id, null, null, $progress);
+
+        // Show regrade errors and set the course to no longer needing regrade (stop endless loop).
+        if (is_array($status)) {
+            foreach ($status as $error) {
+                $errortext = new \core\output\notification($error, \core\output\notification::NOTIFY_ERROR);
+                echo $OUTPUT->render($errortext);
+            }
+            $courseitem = grade_item::fetch_course_item($course->id);
+            $courseitem->regrading_finished();
+        }
 
         if ($callback) {
             //
@@ -573,6 +583,8 @@ function grade_get_grades($courseid, $itemtype, $itemmodule, $iteminstance, $use
                         $grade->feedback       = $grade_grades[$userid]->feedback;
                         $grade->feedbackformat = $grade_grades[$userid]->feedbackformat;
                         $grade->usermodified   = $grade_grades[$userid]->usermodified;
+                        $grade->datesubmitted  = $grade_grades[$userid]->get_datesubmitted();
+                        $grade->dategraded     = $grade_grades[$userid]->get_dategraded();
 
                         // create text representation of grade
                         if (in_array($grade_item->id, $needsupdate)) {
@@ -846,6 +858,7 @@ function grade_format_gradevalue_percentage($value, $grade_item, $decimals, $loc
  * @return string
  */
 function grade_format_gradevalue_letter($value, $grade_item) {
+    global $CFG;
     $context = context_course::instance($grade_item->courseid, IGNORE_MISSING);
     if (!$letters = grade_get_letters($context)) {
         return ''; // no letters??
@@ -857,7 +870,16 @@ function grade_format_gradevalue_letter($value, $grade_item) {
 
     $value = grade_grade::standardise_score($value, $grade_item->grademin, $grade_item->grademax, 0, 100);
     $value = bounded_number(0, $value, 100); // just in case
+
+    $gradebookcalculationsfreeze = 'gradebook_calculations_freeze_' . $grade_item->courseid;
+
     foreach ($letters as $boundary => $letter) {
+        if (property_exists($CFG, $gradebookcalculationsfreeze) && (int)$CFG->{$gradebookcalculationsfreeze} <= 20160518) {
+            // Do nothing.
+        } else {
+            // The boundary is a percentage out of 100 so use 0 as the min and 100 as the max.
+            $boundary = grade_grade::standardise_score($boundary, 0, 100, 0, 100);
+        }
         if ($value >= $boundary) {
             return format_string($letter);
         }
@@ -1095,8 +1117,9 @@ function grade_recover_history_grades($userid, $courseid) {
  * @return bool true if ok, array of errors if problems found. Grade item id => error message
  */
 function grade_regrade_final_grades($courseid, $userid=null, $updated_item=null, $progress=null) {
-    // This may take a very long time.
+    // This may take a very long time and extra memory.
     \core_php_time_limit::raise();
+    raise_memory_limit(MEMORY_EXTRA);
 
     $course_item = grade_item::fetch_course_item($courseid);
 

@@ -68,5 +68,11 @@ function xmldb_workshop_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2016022200, 'workshop');
     }
 
+    // Moodle v3.1.0 release upgrade line.
+    // Put any upgrade step following this.
+
+    // Automatically generated Moodle v3.2.0 release upgrade line.
+    // Put any upgrade step following this.
+
     return true;
 }

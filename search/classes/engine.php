@@ -79,8 +79,6 @@ abstract class engine {
      *
      * Search engine availability should be checked separately.
      *
-     * @see self::is_installed
-     * @see self::is_server_ready
      * @return void
      */
     public function __construct() {
@@ -140,7 +138,7 @@ abstract class engine {
      * Returns a search instance of the specified area checking internal caching.
      *
      * @param string $areaid Area id
-     * @return \core_search\area\base
+     * @return \core_search\base
      */
     protected function get_search_area($areaid) {
 
@@ -176,11 +174,11 @@ abstract class engine {
     /**
      * Returns a document instance prepared to be rendered.
      *
-     * @param \core_search\area\base $searcharea
+     * @param \core_search\base $searcharea
      * @param array $docdata
      * @return \core_search\document
      */
-    protected function to_document(\core_search\area\base $searcharea, $docdata) {
+    protected function to_document(\core_search\base $searcharea, $docdata) {
 
         list($componentname, $areaname) = \core_search\manager::extract_areaid_parts($docdata['areaid']);
         $doc = \core_search\document_factory::instance($docdata['itemid'], $componentname, $areaname, $this);
@@ -257,7 +255,7 @@ abstract class engine {
     /**
      * Do anything that may need to be done before an area is indexed.
      *
-     * @param \core_search\area\base $searcharea The search area that was complete
+     * @param \core_search\base $searcharea The search area that was complete
      * @param bool $fullindex True if a full index is being performed
      * @return void
      */
@@ -270,7 +268,7 @@ abstract class engine {
      *
      * Return false to prevent the search area completed time and stats from being updated.
      *
-     * @param \core_search\area\base $searcharea The search area that was complete
+     * @param \core_search\base $searcharea The search area that was complete
      * @param int $numdocs The number of documents that were added to the index
      * @param bool $fullindex True if a full index is being performed
      * @return bool True means that data is considered indexed
@@ -314,6 +312,20 @@ abstract class engine {
     }
 
     /**
+     * Returns the total number of documents available for the most recent call to execute_query.
+     *
+     * This can be an estimate, but should get more accurate the higher the limited passed to execute_query is.
+     * To do that, the engine can use (actual result returned count + count of unchecked documents), or
+     * (total possible docs - docs that have been checked and rejected).
+     *
+     * Engine can limit to manager::MAX_RESULTS if there is cost to determining more.
+     * If this cannot be computed in a reasonable way, manager::MAX_RESULTS may be returned.
+     *
+     * @return int
+     */
+    abstract public function get_query_total_count();
+
+    /**
      * Return true if file indexing is supported and enabled. False otherwise.
      *
      * @return bool
@@ -354,12 +366,16 @@ abstract class engine {
      *
      * Implementations of this function should check user context array to limit the results to contexts where the
      * user have access. They should also limit the owneruserid field to manger::NO_OWNER_ID or the current user's id.
+     * Engines must use area->check_access() to confirm user access.
+     *
+     * Engines should reasonably attempt to fill up to limit with valid results if they are available.
      *
      * @param  stdClass $filters Query and filters to apply.
      * @param  array    $usercontexts Contexts where the user has access. True if the user can access all contexts.
+     * @param  int      $limit The maximum number of results to return. If empty, limit to manager::MAX_RESULTS.
      * @return \core_search\document[] Results or false if no results
      */
-    abstract function execute_query($filters, $usercontexts);
+    abstract function execute_query($filters, $usercontexts, $limit = 0);
 
     /**
      * Delete all documents.

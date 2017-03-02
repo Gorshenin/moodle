@@ -1653,7 +1653,9 @@ class quiz_attempt {
 
         $bc = new block_contents();
         $bc->attributes['id'] = 'mod_quiz_navblock';
-        $bc->title = get_string('quiznavigation', 'quiz');
+        $bc->attributes['role'] = 'navigation';
+        $bc->attributes['aria-labelledby'] = 'mod_quiz_navblock_title';
+        $bc->title = html_writer::span(get_string('quiznavigation', 'quiz'), '', array('id' => 'mod_quiz_navblock_title'));
         $bc->content = $output->navigation_panel($panel);
         return $bc;
     }
@@ -2316,6 +2318,24 @@ class quiz_attempt {
         $event = \mod_quiz\event\attempt_reviewed::create($params);
         $event->add_record_snapshot('quiz_attempts', $this->get_attempt());
         $event->trigger();
+    }
+
+    /**
+     * Update the timemodifiedoffline attempt field.
+     * This function should be used only when web services are being used.
+     *
+     * @param int $time time stamp
+     * @return boolean false if the field is not updated becase web services aren't being used.
+     * @since Moodle 3.2
+     */
+    public function set_offline_modified_time($time) {
+        global $DB;
+
+        // Update the timemodifiedoffline field only if web services are being used.
+        if (WS_SERVER) {
+            $attemptobj->attempt->timemodifiedoffline = $time;
+        }
+        return false;
     }
 
 }

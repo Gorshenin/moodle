@@ -536,7 +536,9 @@ function lesson_menu_block_contents($cmid, $lesson) {
         return null;
     }
 
-    $content = '<a href="#maincontent" class="skip">'.get_string('skip', 'lesson')."</a>\n<div class=\"menuwrapper\">\n<ul>\n";
+    $content = '<a href="#maincontent" class="accesshide">' .
+        get_string('skip', 'lesson') .
+        "</a>\n<div class=\"menuwrapper\">\n<ul>\n";
 
     while ($pageid != 0) {
         $page = $pages[$pageid];
@@ -616,19 +618,19 @@ function lesson_get_media_html($lesson, $context) {
 
     $extension = resourcelib_get_extension($url->out(false));
 
-    $mediarenderer = $PAGE->get_renderer('core', 'media');
+    $mediamanager = core_media_manager::instance($PAGE);
     $embedoptions = array(
-        core_media::OPTION_TRUSTED => true,
-        core_media::OPTION_BLOCK => true
+        core_media_manager::OPTION_TRUSTED => true,
+        core_media_manager::OPTION_BLOCK => true
     );
 
     // find the correct type and print it out
     if (in_array($mimetype, array('image/gif','image/jpeg','image/png'))) {  // It's an image
         $code = resourcelib_embed_image($url, $title);
 
-    } else if ($mediarenderer->can_embed_url($url, $embedoptions)) {
+    } else if ($mediamanager->can_embed_url($url, $embedoptions)) {
         // Media (audio/video) file.
-        $code = $mediarenderer->embed_url($url, $title, 0, 0, $embedoptions);
+        $code = $mediamanager->embed_url($url, $title, 0, 0, $embedoptions);
 
     } else {
         // anything else - just try object tag enlarged as much as possible
@@ -1007,6 +1009,32 @@ class lesson extends lesson_base {
      * @var bool
      */
     protected $loadedallpages = false;
+
+    /**
+     * Course module object gets set and retrieved by directly calling <code>$lesson->cm;</code>
+     * @see get_cm()
+     * @var stdClass
+     */
+    protected $cm = null;
+
+    /**
+     * Context object gets set and retrieved by directly calling <code>$lesson->context;</code>
+     * @see get_context()
+     * @var stdClass
+     */
+    protected $context = null;
+
+    /**
+     * Constructor method
+     *
+     * @param object $properties
+     * @param stdClass $cm course module object
+     * @since Moodle 3.3
+     */
+    public function __construct($properties, $cm = null) {
+        parent::__construct($properties);
+        $this->cm = $cm;
+    }
 
     /**
      * Simply generates a lesson object given an array/object of properties
@@ -1663,6 +1691,93 @@ class lesson extends lesson_base {
     }
 
     /**
+     * Duplicate the lesson page.
+     *
+     * @param  int $pageid Page ID of the page to duplicate.
+     * @return void.
+     */
+    public function duplicate_page($pageid) {
+        global $PAGE;
+        $cm = get_coursemodule_from_instance('lesson', $this->properties->id, $this->properties->course);
+        $context = context_module::instance($cm->id);
+        // Load the page.
+        $page = $this->load_page($pageid);
+        $properties = $page->properties();
+        // The create method checks to see if these properties are set and if not sets them to zero, hence the unsetting here.
+        if (!$properties->qoption) {
+            unset($properties->qoption);
+        }
+        if (!$properties->layout) {
+            unset($properties->layout);
+        }
+        if (!$properties->display) {
+            unset($properties->display);
+        }
+
+        $properties->pageid = $pageid;
+        // Add text and format into the format required to create a new page.
+        $properties->contents_editor = array(
+            'text' => $properties->contents,
+            'format' => $properties->contentsformat
+        );
+        $answers = $page->get_answers();
+        // Answers need to be added to $properties.
+        $i = 0;
+        $answerids = array();
+        foreach ($answers as $answer) {
+            // Needs to be rearranged to work with the create function.
+            $properties->answer_editor[$i] = array(
+                'text' => $answer->answer,
+                'format' => $answer->answerformat
+            );
+
+            $properties->response_editor[$i] = array(
+              'text' => $answer->response,
+              'format' => $answer->responseformat
+            );
+            $answerids[] = $answer->id;
+
+            $properties->jumpto[$i] = $answer->jumpto;
+            $properties->score[$i] = $answer->score;
+
+            $i++;
+        }
+        // Create the duplicate page.
+        $newlessonpage = lesson_page::create($properties, $this, $context, $PAGE->course->maxbytes);
+        $newanswers = $newlessonpage->get_answers();
+        // Copy over the file areas as well.
+        $this->copy_page_files('page_contents', $pageid, $newlessonpage->id, $context->id);
+        $j = 0;
+        foreach ($newanswers as $answer) {
+            if (isset($answer->answer) && strpos($answer->answer, '@@PLUGINFILE@@') !== false) {
+                $this->copy_page_files('page_answers', $answerids[$j], $answer->id, $context->id);
+            }
+            if (isset($answer->response) && !is_array($answer->response) && strpos($answer->response, '@@PLUGINFILE@@') !== false) {
+                $this->copy_page_files('page_responses', $answerids[$j], $answer->id, $context->id);
+            }
+            $j++;
+        }
+    }
+
+    /**
+     * Copy the files from one page to another.
+     *
+     * @param  string $filearea Area that the files are stored.
+     * @param  int $itemid Item ID.
+     * @param  int $newitemid The item ID for the new page.
+     * @param  int $contextid Context ID for this page.
+     * @return void.
+     */
+    protected function copy_page_files($filearea, $itemid, $newitemid, $contextid) {
+        $fs = get_file_storage();
+        $files = $fs->get_area_files($contextid, 'mod_lesson', $filearea, $itemid);
+        foreach ($files as $file) {
+            $fieldupdates = array('itemid' => $newitemid);
+            $fs->create_file_from_storedfile($fieldupdates, $file);
+        }
+    }
+
+    /**
      * Determines if a jumpto value is correct or not.
      *
      * returns true if jumpto page is (logically) after the pageid page or
@@ -1976,6 +2091,169 @@ class lesson extends lesson_base {
             $event->trigger();
         }
 
+    }
+
+    /**
+     * Return the lesson context object.
+     *
+     * @return stdClass context
+     * @since  Moodle 3.3
+     */
+    public function get_context() {
+        if ($this->context == null) {
+            $this->context = context_module::instance($this->get_cm()->id);
+        }
+        return $this->context;
+    }
+
+    /**
+     * Set the lesson course module object.
+     *
+     * @param stdClass $cm course module objct
+     * @since  Moodle 3.3
+     */
+    private function set_cm($cm) {
+        $this->cm = $cm;
+    }
+
+    /**
+     * Return the lesson course module object.
+     *
+     * @return stdClass course module
+     * @since  Moodle 3.3
+     */
+    public function get_cm() {
+        if ($this->cm == null) {
+            $this->cm = get_coursemodule_from_instance('lesson', $this->properties->id);
+        }
+        return $this->cm;
+    }
+
+    /**
+     * Check if the user can manage the lesson activity.
+     *
+     * @return bool true if the user can manage the lesson
+     * @since  Moodle 3.3
+     */
+    public function can_manage() {
+        return has_capability('mod/lesson:manage', $this->get_context());
+    }
+
+    /**
+     * Check if time restriction is applied.
+     *
+     * @return mixed false if  there aren't restrictions or an object with the restriction information
+     * @since  Moodle 3.3
+     */
+    public function get_time_restriction_status() {
+        if ($this->can_manage()) {
+            return false;
+        }
+
+        if (!$this->is_accessible()) {
+            if ($this->properties->deadline != 0 && time() > $this->properties->deadline) {
+                $status = ['reason' => 'lessonclosed', 'time' => $this->properties->deadline];
+            } else {
+                $status = ['reason' => 'lessonopen', 'time' => $this->properties->available];
+            }
+            return (object) $status;
+        }
+        return false;
+    }
+
+    /**
+     * Check if password restriction is applied.
+     *
+     * @param string $userpassword the user password to check (if the restriction is set)
+     * @return mixed false if there aren't restrictions or an object with the restriction information
+     * @since  Moodle 3.3
+     */
+    public function get_password_restriction_status($userpassword) {
+        global $USER;
+        if ($this->can_manage()) {
+            return false;
+        }
+
+        if ($this->properties->usepassword && empty($USER->lessonloggedin[$this->id])) {
+            $correctpass = false;
+            if (!empty($userpassword) &&
+                    (($this->properties->password == md5(trim($userpassword))) || ($this->properties->password == trim($userpassword)))) {
+                // With or without md5 for backward compatibility (MDL-11090).
+                $correctpass = true;
+                $USER->lessonloggedin[$this->id] = true;
+            } else if (isset($this->properties->extrapasswords)) {
+                // Group overrides may have additional passwords.
+                foreach ($this->properties->extrapasswords as $password) {
+                    if (strcmp($password, md5(trim($userpassword))) === 0 || strcmp($password, trim($userpassword)) === 0) {
+                        $correctpass = true;
+                        $USER->lessonloggedin[$this->id] = true;
+                    }
+                }
+            }
+            return !$correctpass;
+        }
+        return false;
+    }
+
+    /**
+     * Check if dependencies restrictions are applied.
+     *
+     * @return mixed false if there aren't restrictions or an object with the restriction information
+     * @since  Moodle 3.3
+     */
+    public function get_dependencies_restriction_status() {
+        global $DB, $USER;
+        if ($this->can_manage()) {
+            return false;
+        }
+
+        if ($dependentlesson = $DB->get_record('lesson', array('id' => $this->properties->dependency))) {
+            // Lesson exists, so we can proceed.
+            $conditions = unserialize($this->properties->conditions);
+            // Assume false for all.
+            $errors = array();
+            // Check for the timespent condition.
+            if ($conditions->timespent) {
+                $timespent = false;
+                if ($attempttimes = $DB->get_records('lesson_timer', array("userid" => $USER->id, "lessonid" => $dependentlesson->id))) {
+                    // Go through all the times and test to see if any of them satisfy the condition.
+                    foreach ($attempttimes as $attempttime) {
+                        $duration = $attempttime->lessontime - $attempttime->starttime;
+                        if ($conditions->timespent < $duration / 60) {
+                            $timespent = true;
+                        }
+                    }
+                }
+                if (!$timespent) {
+                    $errors[] = get_string('timespenterror', 'lesson', $conditions->timespent);
+                }
+            }
+            // Check for the gradebetterthan condition.
+            if ($conditions->gradebetterthan) {
+                $gradebetterthan = false;
+                if ($studentgrades = $DB->get_records('lesson_grades', array("userid" => $USER->id, "lessonid" => $dependentlesson->id))) {
+                    // Go through all the grades and test to see if any of them satisfy the condition.
+                    foreach ($studentgrades as $studentgrade) {
+                        if ($studentgrade->grade >= $conditions->gradebetterthan) {
+                            $gradebetterthan = true;
+                        }
+                    }
+                }
+                if (!$gradebetterthan) {
+                    $errors[] = get_string('gradebetterthanerror', 'lesson', $conditions->gradebetterthan);
+                }
+            }
+            // Check for the completed condition.
+            if ($conditions->completed) {
+                if (!$DB->count_records('lesson_grades', array('userid' => $USER->id, 'lessonid' => $dependentlesson->id))) {
+                    $errors[] = get_string('completederror', 'lesson');
+                }
+            }
+            if (!empty($errors)) {
+                return (object) ['errors' => $errors, 'dependentlesson' => $dependentlesson];
+            }
+        }
+        return false;
     }
 }
 
@@ -2866,7 +3144,7 @@ abstract class lesson_page extends lesson_base {
         for ($i = 0; $i < $this->lesson->maxanswers; $i++) {
             $answer = clone($newanswer);
 
-            if (!empty($properties->answer_editor[$i])) {
+            if (isset($properties->answer_editor[$i])) {
                 if (is_array($properties->answer_editor[$i])) {
                     // Multichoice and true/false pages have an HTML editor.
                     $answer->answer = $properties->answer_editor[$i]['text'];

@@ -78,12 +78,12 @@ class manager {
     const NO_OWNER_ID = 0;
 
     /**
-     * @var \core_search\area\base[] Enabled search areas.
+     * @var \core_search\base[] Enabled search areas.
      */
     protected static $enabledsearchareas = null;
 
     /**
-     * @var \core_search\area\base[] All system search areas.
+     * @var \core_search\base[] All system search areas.
      */
     protected static $allsearchareas = null;
 
@@ -100,7 +100,7 @@ class manager {
     /**
      * Constructor, use \core_search\manager::instance instead to get a class instance.
      *
-     * @param \core_search\area\base The search engine to use
+     * @param \core_search\base The search engine to use
      */
     public function __construct($engine) {
         $this->engine = $engine;
@@ -109,6 +109,8 @@ class manager {
     /**
      * Returns an initialised \core_search instance.
      *
+     * @see \core_search\engine::is_installed
+     * @see \core_search\engine::is_server_ready
      * @throws \core_search\engine_exception
      * @return \core_search\manager
      */
@@ -118,6 +120,10 @@ class manager {
         // One per request, this should be purged during testing.
         if (static::$instance !== null) {
             return static::$instance;
+        }
+
+        if (empty($CFG->searchengine)) {
+            throw new \core_search\engine_exception('enginenotselected', 'search');
         }
 
         if (!$engine = static::search_engine_instance()) {
@@ -188,20 +194,18 @@ class manager {
      * Returns a new area search indexer instance.
      *
      * @param string $areaid
-     * @return \core_search\area\base|bool False if the area is not available.
+     * @return \core_search\base|bool False if the area is not available.
      */
     public static function get_search_area($areaid) {
 
-        // Try both caches, it does not matter where it comes from.
+        // We have them all here.
         if (!empty(static::$allsearchareas[$areaid])) {
             return static::$allsearchareas[$areaid];
         }
-        if (!empty(static::$enabledsearchareas[$areaid])) {
-            return static::$enabledsearchareas[$areaid];
-        }
 
         $classname = static::get_area_classname($areaid);
-        if (class_exists($classname)) {
+
+        if (class_exists($classname) && static::is_search_area($classname)) {
             return new $classname();
         }
 
@@ -212,18 +216,21 @@ class manager {
      * Return the list of available search areas.
      *
      * @param bool $enabled Return only the enabled ones.
-     * @return \core_search\area\base[]
+     * @return \core_search\base[]
      */
     public static function get_search_areas_list($enabled = false) {
 
         // Two different arrays, we don't expect these arrays to be big.
-        if (!$enabled && static::$allsearchareas !== null) {
-            return static::$allsearchareas;
-        } else if ($enabled && static::$enabledsearchareas !== null) {
-            return static::$enabledsearchareas;
+        if (static::$allsearchareas !== null) {
+            if (!$enabled) {
+                return static::$allsearchareas;
+            } else {
+                return static::$enabledsearchareas;
+            }
         }
 
-        $searchareas = array();
+        static::$allsearchareas = array();
+        static::$enabledsearchareas = array();
 
         $plugintypes = \core_component::get_plugin_types();
         foreach ($plugintypes as $plugintype => $unused) {
@@ -234,10 +241,17 @@ class manager {
                 $searchclasses = \core_component::get_component_classes_in_namespace($componentname, 'search');
                 foreach ($searchclasses as $classname => $classpath) {
                     $areaname = substr(strrchr($classname, '\\'), 1);
+
+                    if (!static::is_search_area($classname)) {
+                        continue;
+                    }
+
                     $areaid = static::generate_areaid($componentname, $areaname);
                     $searchclass = new $classname();
-                    if (!$enabled || ($enabled && $searchclass->is_enabled())) {
-                        $searchareas[$areaid] = $searchclass;
+
+                    static::$allsearchareas[$areaid] = $searchclass;
+                    if ($searchclass->is_enabled()) {
+                        static::$enabledsearchareas[$areaid] = $searchclass;
                     }
                 }
             }
@@ -250,22 +264,24 @@ class manager {
 
             foreach ($searchclasses as $classname => $classpath) {
                 $areaname = substr(strrchr($classname, '\\'), 1);
+
+                if (!static::is_search_area($classname)) {
+                    continue;
+                }
+
                 $areaid = static::generate_areaid($componentname, $areaname);
                 $searchclass = new $classname();
-                if (!$enabled || ($enabled && $searchclass->is_enabled())) {
-                    $searchareas[$areaid] = $searchclass;
+                static::$allsearchareas[$areaid] = $searchclass;
+                if ($searchclass->is_enabled()) {
+                    static::$enabledsearchareas[$areaid] = $searchclass;
                 }
             }
         }
 
-        // Cache results.
         if ($enabled) {
-            static::$enabledsearchareas = $searchareas;
-        } else {
-            static::$allsearchareas = $searchareas;
+            return static::$enabledsearchareas;
         }
-
-        return $searchareas;
+        return static::$allsearchareas;
     }
 
     /**
@@ -311,9 +327,10 @@ class manager {
      * information and there will be a performance benefit on passing only some contexts
      * instead of the whole context array set.
      *
+     * @param array|false $limitcourseids An array of course ids to limit the search to. False for no limiting.
      * @return bool|array Indexed by area identifier (component + area name). Returns true if the user can see everything.
      */
-    protected function get_areas_user_accesses() {
+    protected function get_areas_user_accesses($limitcourseids = false) {
         global $CFG, $USER;
 
         // All results for admins. Eventually we could add a new capability for managers.
@@ -336,22 +353,38 @@ class manager {
         // This will store area - allowed contexts relations.
         $areascontexts = array();
 
-        if (!empty($areasbylevel[CONTEXT_SYSTEM])) {
+        if (empty($limitcourseids) && !empty($areasbylevel[CONTEXT_SYSTEM])) {
             // We add system context to all search areas working at this level. Here each area is fully responsible of
             // the access control as we can not automate much, we can not even check guest access as some areas might
             // want to allow guests to retrieve data from them.
 
             $systemcontextid = \context_system::instance()->id;
             foreach ($areasbylevel[CONTEXT_SYSTEM] as $areaid => $searchclass) {
-                $areascontexts[$areaid][] = $systemcontextid;
+                $areascontexts[$areaid][$systemcontextid] = $systemcontextid;
+            }
+        }
+
+        if (!empty($areasbylevel[CONTEXT_USER])) {
+            if ($usercontext = \context_user::instance($USER->id, IGNORE_MISSING)) {
+                // Extra checking although only logged users should reach this point, guest users have a valid context id.
+                foreach ($areasbylevel[CONTEXT_USER] as $areaid => $searchclass) {
+                    $areascontexts[$areaid][$usercontext->id] = $usercontext->id;
+                }
             }
         }
 
         // Get the courses where the current user has access.
         $courses = enrol_get_my_courses(array('id', 'cacherev'));
-        $courses[SITEID] = get_course(SITEID);
-        $site = \course_modinfo::instance(SITEID);
+
+        if (empty($limitcourseids) || in_array(SITEID, $limitcourseids)) {
+            $courses[SITEID] = get_course(SITEID);
+        }
+
         foreach ($courses as $course) {
+            if (!empty($limitcourseids) && !in_array($course->id, $limitcourseids)) {
+                // Skip non-included courses.
+                continue;
+            }
 
             // Info about the course modules.
             $modinfo = get_fast_modinfo($course);
@@ -389,6 +422,61 @@ class manager {
     }
 
     /**
+     * Returns requested page of documents plus additional information for paging.
+     *
+     * This function does not perform any kind of security checking for access, the caller code
+     * should check that the current user have moodle/search:query capability.
+     *
+     * If a page is requested that is beyond the last result, the last valid page is returned in
+     * results, and actualpage indicates which page was returned.
+     *
+     * @param stdClass $formdata
+     * @param int $pagenum The 0 based page number.
+     * @return object An object with 3 properties:
+     *                    results    => An array of \core_search\documents for the actual page.
+     *                    totalcount => Number of records that are possibly available, to base paging on.
+     *                    actualpage => The actual page returned.
+     */
+    public function paged_search(\stdClass $formdata, $pagenum) {
+        $out = new \stdClass();
+
+        $perpage = static::DISPLAY_RESULTS_PER_PAGE;
+
+        // Make sure we only allow request up to max page.
+        $pagenum = min($pagenum, (static::MAX_RESULTS / $perpage) - 1);
+
+        // Calculate the first and last document number for the current page, 1 based.
+        $mindoc = ($pagenum * $perpage) + 1;
+        $maxdoc = ($pagenum + 1) * $perpage;
+
+        // Get engine documents, up to max.
+        $docs = $this->search($formdata, $maxdoc);
+
+        $resultcount = count($docs);
+        if ($resultcount < $maxdoc) {
+            // This means it couldn't give us results to max, so the count must be the max.
+            $out->totalcount = $resultcount;
+        } else {
+            // Get the possible count reported by engine, and limit to our max.
+            $out->totalcount = $this->engine->get_query_total_count();
+            $out->totalcount = min($out->totalcount, static::MAX_RESULTS);
+        }
+
+        // Determine the actual page.
+        if ($resultcount < $mindoc) {
+            // We couldn't get the min docs for this page, so determine what page we can get.
+            $out->actualpage = floor(($resultcount - 1) / $perpage);
+        } else {
+            $out->actualpage = $pagenum;
+        }
+
+        // Split the results to only return the page.
+        $out->results = array_slice($docs, $out->actualpage * $perpage, $perpage, true);
+
+        return $out;
+    }
+
+    /**
      * Returns documents from the engine based on the data provided.
      *
      * This function does not perform any kind of security checking, the caller code
@@ -397,65 +485,29 @@ class manager {
      * It might return the results from the cache instead.
      *
      * @param stdClass $formdata
+     * @param int      $limit The maximum number of documents to return
      * @return \core_search\document[]
      */
-    public function search(\stdClass $formdata) {
+    public function search(\stdClass $formdata, $limit = 0) {
         global $USER;
 
-        $cache = \cache::make('core', 'search_results');
-
-        // Generate a string from all query filters
-        // Not including $areascontext here, being a user cache it is not needed.
-        $querykey = $this->generate_query_key($formdata, $USER->id);
-
-        // Look for cached results before executing it.
-        if ($results = $cache->get($querykey)) {
-            return $results;
+        $limitcourseids = false;
+        if (!empty($formdata->courseids)) {
+            $limitcourseids = $formdata->courseids;
         }
 
         // Clears previous query errors.
         $this->engine->clear_query_error();
 
-        $areascontexts = $this->get_areas_user_accesses();
+        $areascontexts = $this->get_areas_user_accesses($limitcourseids);
         if (!$areascontexts) {
             // User can not access any context.
             $docs = array();
         } else {
-            $docs = $this->engine->execute_query($formdata, $areascontexts);
+            $docs = $this->engine->execute_query($formdata, $areascontexts, $limit);
         }
-
-        // Cache results.
-        $cache->set($querykey, $docs);
 
         return $docs;
-    }
-
-    /**
-     * We generate the key ourselves so MUC knows that it contains simplekeys.
-     *
-     * @param stdClass $formdata
-     * @return string
-     */
-    protected function generate_query_key($formdata) {
-        global $USER;
-
-        // Empty values by default (although q should always have a value).
-        $fields = array('q', 'title', 'areaid', 'timestart', 'timeend', 'page');
-
-        // Just in this function scope.
-        $params = clone $formdata;
-        foreach ($fields as $field) {
-            if (empty($params->{$field})) {
-                $params->{$field} = '';
-            }
-        }
-
-        // Although it is not likely, we prevent cache hits if available search areas change during the session.
-        $enabledareas = implode('-', array_keys(static::get_search_areas_list(true)));
-
-        return md5($params->q . 'userid=' . $USER->id . 'title=' . $params->title . 'areaid=' . $params->areaid .
-            'timestart=' . $params->timestart . 'timeend=' . $params->timeend . 'page=' . $params->page .
-            $enabledareas);
     }
 
     /**
@@ -639,12 +691,11 @@ class manager {
     /**
      * Returns search areas configuration.
      *
-     * @param \core_search\area\base[] $searchareas
+     * @param \core_search\base[] $searchareas
      * @return \stdClass[] $configsettings
      */
     public function get_areas_config($searchareas) {
 
-        $allconfigs = get_config('search');
         $vars = array('indexingstart', 'indexingend', 'lastindexrun', 'docsignored', 'docsprocessed', 'recordsprocessed');
 
         $configsettings =  array();
@@ -674,5 +725,45 @@ class manager {
             }
         }
         return $configsettings;
+    }
+
+    /**
+     * Triggers search_results_viewed event
+     *
+     * Other data required:
+     * - q: The query string
+     * - page: The page number
+     * - title: Title filter
+     * - areaids: Search areas filter
+     * - courseids: Courses filter
+     * - timestart: Time start filter
+     * - timeend: Time end filter
+     *
+     * @since Moodle 3.2
+     * @param array $other Other info for the event.
+     * @return \core\event\search_results_viewed
+     */
+    public static function trigger_search_results_viewed($other) {
+        $event = \core\event\search_results_viewed::create([
+            'context' => \context_system::instance(),
+            'other' => $other
+        ]);
+        $event->trigger();
+
+        return $event;
+    }
+
+    /**
+     * Checks whether a classname is of an actual search area.
+     *
+     * @param string $classname
+     * @return bool
+     */
+    protected static function is_search_area($classname) {
+        if (is_subclass_of($classname, 'core_search\base')) {
+            return (new \ReflectionClass($classname))->isInstantiable();
+        }
+
+        return false;
     }
 }

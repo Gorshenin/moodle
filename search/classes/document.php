@@ -103,12 +103,14 @@ class document implements \renderable, \templatable {
         'title' => array(
             'type' => 'text',
             'stored' => true,
-            'indexed' => true
+            'indexed' => true,
+            'mainquery' => true
         ),
         'content' => array(
             'type' => 'text',
             'stored' => true,
-            'indexed' => true
+            'indexed' => true,
+            'mainquery' => true
         ),
         'contextid' => array(
             'type' => 'int',
@@ -160,12 +162,14 @@ class document implements \renderable, \templatable {
         'description1' => array(
             'type' => 'text',
             'stored' => true,
-            'indexed' => true
+            'indexed' => true,
+            'mainquery' => true
         ),
         'description2' => array(
             'type' => 'text',
             'stored' => true,
-            'indexed' => true
+            'indexed' => true,
+            'mainquery' => true
         )
     );
 
@@ -272,8 +276,8 @@ class document implements \renderable, \templatable {
         if ($fielddata['type'] === 'int' || $fielddata['type'] === 'tdate') {
             $this->data[$fieldname] = intval($value);
         } else {
-            // Clean up line breaks and extra spaces.
-            $this->data[$fieldname] = preg_replace("/\s+/", ' ', trim($value, "\r\n"));
+            // Replace all groups of line breaks and spaces by single spaces.
+            $this->data[$fieldname] = preg_replace("/\s+/u", " ", $value);
         }
 
         return $this->data[$fieldname];
@@ -551,6 +555,9 @@ class document implements \renderable, \templatable {
      * Although content is a required field when setting up the document, it accepts '' (empty) values
      * as they may be the result of striping out HTML.
      *
+     * SECURITY NOTE: It is the responsibility of the document to properly escape any text to be displayed.
+     * The renderer will output the content without any further cleaning.
+     *
      * @param renderer_base $output The renderer.
      * @return array
      */
@@ -559,7 +566,9 @@ class document implements \renderable, \templatable {
 
         $title = $this->is_set('title') ? $this->format_text($this->get('title')) : '';
         $data = [
-            'courseurl' => new \moodle_url('/course/view.php?id=' . $this->get('courseid')),
+            'componentname' => $componentname,
+            'areaname' => $areaname,
+            'courseurl' => course_get_url($this->get('courseid')),
             'coursefullname' => format_string($this->get('coursefullname'), true, array('context' => $this->get('contextid'))),
             'modified' => userdate($this->get('modified')),
             'title' => ($title !== '') ? $title : get_string('notitle', 'search'),
@@ -576,13 +585,13 @@ class document implements \renderable, \templatable {
             if (count($files) > 1) {
                 $filenames = array();
                 foreach ($files as $file) {
-                    $filenames[] = $file->get_filename();
+                    $filenames[] = format_string($file->get_filename(), true, array('context' => $this->get('contextid')));
                 }
                 $data['multiplefiles'] = true;
                 $data['filenames'] = $filenames;
             } else {
                 $file = reset($files);
-                $data['filename'] = $file->get_filename();
+                $data['filename'] = format_string($file->get_filename(), true, array('context' => $this->get('contextid')));
             }
         }
 

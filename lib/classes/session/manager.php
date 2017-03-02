@@ -72,11 +72,15 @@ class manager {
         try {
             self::$handler->init();
             self::prepare_cookies();
-            $newsid = empty($_COOKIE[session_name()]);
+            $isnewsession = empty($_COOKIE[session_name()]);
 
-            self::$handler->start();
+            if (!self::$handler->start()) {
+                // Could not successfully start/recover session.
+                throw new \core\session\exception(get_string('servererror'));
+            }
 
-            self::initialise_user_session($newsid);
+            self::initialise_user_session($isnewsession);
+            self::$sessionactive = true; // Set here, so the session can be cleared if the security check fails.
             self::check_security();
 
             // Link global $USER and $SESSION,
@@ -90,13 +94,10 @@ class manager {
             $_SESSION['SESSION'] =& $GLOBALS['SESSION'];
 
         } catch (\Exception $ex) {
-            @session_write_close();
             self::init_empty_session();
             self::$sessionactive = false;
             throw $ex;
         }
-
-        self::$sessionactive = true;
     }
 
     /**
@@ -189,9 +190,7 @@ class manager {
     protected static function prepare_cookies() {
         global $CFG;
 
-        if (!isset($CFG->cookiesecure) or (!is_https() and empty($CFG->sslproxy))) {
-            $CFG->cookiesecure = 0;
-        }
+        $cookiesecure = is_moodle_cookie_secure();
 
         if (!isset($CFG->cookiehttponly)) {
             $CFG->cookiehttponly = 0;
@@ -252,7 +251,7 @@ class manager {
 
         // Set configuration.
         session_name($sessionname);
-        session_set_cookie_params(0, $CFG->sessioncookiepath, $CFG->sessioncookiedomain, $CFG->cookiesecure, $CFG->cookiehttponly);
+        session_set_cookie_params(0, $CFG->sessioncookiepath, $CFG->sessioncookiedomain, $cookiesecure, $CFG->cookiehttponly);
         ini_set('session.use_trans_sid', '0');
         ini_set('session.use_only_cookies', '1');
         ini_set('session.hash_function', '0');        // For now MD5 - we do not have room for sha-1 in sessions table.
@@ -438,6 +437,7 @@ class manager {
      * Do various session security checks.
      *
      * WARNING: $USER and $SESSION are set up later, do not use them yet!
+     * @throws \core\session\exception
      */
     protected static function check_security() {
         global $CFG;
@@ -521,11 +521,23 @@ class manager {
      * Unblocks the sessions, other scripts may start executing in parallel.
      */
     public static function write_close() {
-        if (self::$sessionactive) {
-            session_write_close();
+        if (version_compare(PHP_VERSION, '5.6.0', '>=')) {
+            // More control over whether session data
+            // is persisted or not.
+            if (self::$sessionactive && session_id()) {
+                // Write session and release lock only if
+                // indication session start was clean.
+                session_write_close();
+            } else {
+                // Otherwise, if possibile lock exists want
+                // to clear it, but do not write session.
+                @session_abort();
+            }
         } else {
-            if (session_id()) {
-                @session_write_close();
+            // Any indication session was started, attempt
+            // to close it.
+            if (self::$sessionactive || session_id()) {
+                session_write_close();
             }
         }
         self::$sessionactive = false;
@@ -757,7 +769,7 @@ class manager {
                 foreach ($authplugins as $authplugin) {
                     /** @var \auth_plugin_base $authplugin*/
                     if ($authplugin->ignore_timeout_hook($user, $user->sid, $user->s_timecreated, $user->s_timemodified)) {
-                        continue;
+                        continue 2;
                     }
                 }
                 self::kill_session($user->sid);
@@ -817,9 +829,10 @@ class manager {
      * Login as another user - no security checks here.
      * @param int $userid
      * @param \context $context
+     * @param bool $generateevent Set to false to prevent the loginas event to be generated
      * @return void
      */
-    public static function loginas($userid, \context $context) {
+    public static function loginas($userid, \context $context, $generateevent = true) {
         global $USER;
 
         if (self::is_loggedinas()) {
@@ -841,21 +854,27 @@ class manager {
         // Let enrol plugins deal with new enrolments if necessary.
         enrol_check_plugins($user);
 
-        // Create event before $USER is updated.
-        $event = \core\event\user_loggedinas::create(
-            array(
-                'objectid' => $USER->id,
-                'context' => $context,
-                'relateduserid' => $userid,
-                'other' => array(
-                    'originalusername' => fullname($USER, true),
-                    'loggedinasusername' => fullname($user, true)
+        if ($generateevent) {
+            // Create event before $USER is updated.
+            $event = \core\event\user_loggedinas::create(
+                array(
+                    'objectid' => $USER->id,
+                    'context' => $context,
+                    'relateduserid' => $userid,
+                    'other' => array(
+                        'originalusername' => fullname($USER, true),
+                        'loggedinasusername' => fullname($user, true)
+                    )
                 )
-            )
-        );
+            );
+        }
+
         // Set up global $USER.
         \core\session\manager::set_user($user);
-        $event->trigger();
+
+        if ($generateevent) {
+            $event->trigger();
+        }
     }
 
     /**

@@ -35,7 +35,7 @@ require_once($CFG->dirroot . '/mod/forum/lib.php');
  * @copyright  2015 David Monllao {@link http://www.davidmonllao.com}
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
-class post extends \core_search\area\base_mod {
+class post extends \core_search\base_mod {
 
     /**
      * @var array Internal quick static cache.
@@ -94,7 +94,7 @@ class post extends \core_search\area\base_mod {
 
         // Prepare associative array with data from DB.
         $doc = \core_search\document_factory::instance($record->id, $this->componentname, $this->areaname);
-        $doc->set('title', $record->subject);
+        $doc->set('title', content_to_text($record->subject, false));
         $doc->set('content', content_to_text($record->message, $record->messageformat));
         $doc->set('contextid', $context->id);
         $doc->set('courseid', $record->courseid);

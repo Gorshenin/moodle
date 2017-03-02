@@ -806,6 +806,17 @@ if ($mode === MODE_USERDETAILS) {    // Print simple listing.
 
 }
 
+$perpageurl = clone($baseurl);
+$perpageurl->remove_params('perpage');
+if ($perpage == SHOW_ALL_PAGE_SIZE) {
+    $perpageurl->param('perpage', DEFAULT_PAGE_SIZE);
+    echo $OUTPUT->container(html_writer::link($perpageurl, get_string('showperpage', '', DEFAULT_PAGE_SIZE)), array(), 'showall');
+
+} else if ($matchcount > 0 && $perpage < $matchcount) {
+    $perpageurl->param('perpage', SHOW_ALL_PAGE_SIZE);
+    echo $OUTPUT->container(html_writer::link($perpageurl, get_string('showall', '', $matchcount)), array(), 'showall');
+}
+
 if ($bulkoperations) {
     echo '<br /><div class="buttons">';
 
@@ -819,17 +830,23 @@ if ($bulkoperations) {
         $showalllink = false;
     }
 
+    echo html_writer::start_tag('div', array('class' => 'btn-group'));
     if ($perpage < $matchcount) {
         // Select all users, refresh page showing all users and mark them all selected.
         $label = get_string('selectalluserswithcount', 'moodle', $matchcount);
-        echo '<input type="button" id="checkall" value="' . $label . '" data-showallink="' . $showalllink . '" /> ';
+        echo html_writer::tag('input', "", array('type' => 'button', 'id' => 'checkall', 'class' => 'btn btn-secondary',
+                'value' => $label, 'data-showallink' => $showalllink));
         // Select all users, mark all users on page as selected.
-        echo '<input type="button" id="checkallonpage" value="' . get_string('selectallusersonpage') . '" /> ';
+        echo html_writer::tag('input', "", array('type' => 'button', 'id' => 'checkallonpage', 'class' => 'btn btn-secondary',
+        'value' => get_string('selectallusersonpage')));
     } else {
-        echo '<input type="button" id="checkallonpage" value="' . get_string('selectall') . '" /> ';
+        echo html_writer::tag('input', "", array('type' => 'button', 'id' => 'checkallonpage', 'class' => 'btn btn-secondary',
+        'value' => get_string('selectall')));
     }
 
-    echo '<input type="button" id="checknone" value="'.get_string('deselectall').'" /> ';
+    echo html_writer::tag('input', "", array('type' => 'button', 'id' => 'checknone', 'class' => 'btn btn-secondary',
+        'value' => get_string('deselectall')));
+    echo html_writer::end_tag('div');
     $displaylist = array();
     $displaylist['messageselect.php'] = get_string('messageselectadd');
     if (!empty($CFG->enablenotes) && has_capability('moodle/notes:manage', $context) && $context->id != $frontpagectx->id) {
@@ -857,17 +874,6 @@ if ($totalcount > $perpage) {
     echo '<form action="index.php" class="searchform"><div><input type="hidden" name="id" value="'.$course->id.'" />';
     echo '<label for="search">' . get_string('search', 'search') . ' </label>';
     echo '<input type="text" id="search" name="search" value="'.s($search).'" />&nbsp;<input type="submit" value="'.get_string('search').'" /></div></form>'."\n";
-}
-
-$perpageurl = clone($baseurl);
-$perpageurl->remove_params('perpage');
-if ($perpage == SHOW_ALL_PAGE_SIZE) {
-    $perpageurl->param('perpage', DEFAULT_PAGE_SIZE);
-    echo $OUTPUT->container(html_writer::link($perpageurl, get_string('showperpage', '', DEFAULT_PAGE_SIZE)), array(), 'showall');
-
-} else if ($matchcount > 0 && $perpage < $matchcount) {
-    $perpageurl->param('perpage', SHOW_ALL_PAGE_SIZE);
-    echo $OUTPUT->container(html_writer::link($perpageurl, get_string('showall', '', $matchcount)), array(), 'showall');
 }
 
 echo '</div>';  // Userlist.
