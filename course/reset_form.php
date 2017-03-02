@@ -41,7 +41,7 @@ class course_reset_form extends moodleform {
 
         $mform->addElement('header', 'generalheader', get_string('general'));
 
-        $mform->addElement('date_selector', 'reset_start_date', get_string('startdate'), array('optional'=>true));
+        $mform->addElement('date_selector', 'reset_start_date', get_string('startdate'), array('optional' => true));
         $mform->addHelpButton('reset_start_date', 'startdate');
         $mform->addElement('date_selector', 'reset_end_date', get_string('enddate'), array('optional' => true));
         $mform->addHelpButton('reset_end_date', 'enddate');
@@ -73,7 +73,6 @@ class course_reset_form extends moodleform {
         $mform->addHelpButton('reset_gradebook_grades', 'removeallcoursegrades', 'grades');
         $mform->disabledIf('reset_gradebook_grades', 'reset_gradebook_items', 'checked');
 
-
         $mform->addElement('header', 'groupheader', get_string('groups'));
 
         $mform->addElement('checkbox', 'reset_groups_remove', get_string('deleteallgroups', 'group'));
@@ -90,13 +89,13 @@ class course_reset_form extends moodleform {
 
         $unsupported_mods = array();
         if ($allmods = $DB->get_records('modules') ) {
-            foreach ($allmods as $mod) {
+            foreach($allmods as $mod) {
                 $modname = $mod->name;
-                $modfile = $CFG->dirroot."/mod/$modname/lib.php";
-                $mod_reset_course_form_definition = $modname.'_reset_course_form_definition';
-                $mod_reset__userdata = $modname.'_reset_userdata';
+                $modfile = $CFG->dirroot . "/mod/$modname/lib.php";
+                $mod_reset_course_form_definition = $modname . '_reset_course_form_definition';
+                $mod_reset__userdata = $modname . '_reset_userdata';
                 if (file_exists($modfile)) {
-                    if (!$DB->count_records($modname, array('course'=>$COURSE->id))) {
+                    if (!$DB->count_records($modname, array('course' => $COURSE->id))) {
                         continue; // Skip mods with no instances
                     }
                     include_once($modfile);
@@ -106,7 +105,7 @@ class course_reset_form extends moodleform {
                         $unsupported_mods[] = $mod;
                     }
                 } else {
-                    debugging('Missing lib.php in '.$modname.' module');
+                    debugging('Missing lib.php in ' . $modname . ' module');
                 }
             }
         }
@@ -114,15 +113,17 @@ class course_reset_form extends moodleform {
         if (!empty($unsupported_mods)) {
             $mform->addElement('header', 'unsupportedheader', get_string('resetnotimplemented'));
             foreach($unsupported_mods as $mod) {
-                $mform->addElement('static', 'unsup'.$mod->name, get_string('modulenameplural', $mod->name));
-                $mform->setAdvanced('unsup'.$mod->name);
+                $mform->addElement('static', 'unsup' . $mod->name, get_string('modulenameplural', $mod->name));
+                $mform->setAdvanced('unsup' . $mod->name);
             }
         }
 
         if ($blockfunctions = get_plugin_list_with_function('block', 'reset_course_form_definition')) {
-            foreach ($blockfunctions as $blocktype => $funcname) {
-                $isattachedtocourse = $blocktype.'_is_attached_to_course';
-                if ($isattachedtocourse($COURSE->id)) {
+            $all_assigned_blocks = $this->associated_blocks_calculate($COURSE->id);
+
+            foreach($all_assigned_blocks as $block) {
+                $funcname = 'block_' . $block->blockname . '_reset_course_form_definition';
+                if (array_search($funcname, $blockfunctions) !== false) {
                     $funcname($mform);
                 }
             }
@@ -140,12 +141,12 @@ class course_reset_form extends moodleform {
         $mform->closeHeaderBefore('buttonar');
     }
 
-    function load_defaults() {
+    function load_defaults (){
         global $CFG, $COURSE, $DB;
 
         $mform =& $this->_form;
 
-        $defaults = array ('reset_events'=>1, 'reset_roles_local'=>1, 'reset_gradebook_grades'=>1, 'reset_notes'=>1);
+        $defaults = array ('reset_events' => 1, 'reset_roles_local' => 1, 'reset_gradebook_grades' => 1, 'reset_notes' => 1);
 
         // Set student as default in unenrol user list, if role with student archetype exist.
         if ($studentrole = get_archetype_roles('student')) {
@@ -153,10 +154,10 @@ class course_reset_form extends moodleform {
         }
 
         if ($allmods = $DB->get_records('modules') ) {
-            foreach ($allmods as $mod) {
+            foreach($allmods as $mod) {
                 $modname = $mod->name;
-                $modfile = $CFG->dirroot."/mod/$modname/lib.php";
-                $mod_reset_course_form_defaults = $modname.'_reset_course_form_defaults';
+                $modfile = $CFG->dirroot . "/mod/$modname/lib.php";
+                $mod_reset_course_form_defaults = $modname . '_reset_course_form_defaults';
                 if (file_exists($modfile)) {
                     @include_once($modfile);
                     if (function_exists($mod_reset_course_form_defaults)) {
@@ -169,17 +170,36 @@ class course_reset_form extends moodleform {
         }
 
         if ($blockfunctions = get_plugin_list_with_function('block', 'reset_course_form_defaults')) {
-            foreach ($blockfunctions as $blocktype => $funcname) {
-                $isattachedtocourse = $blocktype.'_is_attached_to_course';
-                if ($isattachedtocourse($COURSE->id) && $blockdefs = $funcname($COURSE)) {
-                    $defaults = $defaults + $blockdefs;
+            $all_assigned_blocks = $this->associated_blocks_calculate($COURSE->id);
+            foreach($all_assigned_blocks as $block) {
+                $funcname = 'block_' . $block->blockname . '_reset_course_form_defaults';
+                if (array_search($funcname, $blockfunctions) !== false) {
+                    $defaults = $defaults + $funcname($COURSE);
                 }
             }
         }
 
-        foreach ($defaults as $element=>$default) {
+        foreach($defaults as $element => $default) {
             $mform->setDefault($element, $default);
         }
+    }
+
+    /**
+     * Calculation of course-associated blocks
+     *
+     * @param int $course_id number of the course whose assigneds are requested
+     * @return array of associated blocks
+     */
+    private function associated_blocks_calculate ($course_id){
+        global $DB;
+        $course_context = $DB->get_record('context', array('instanceid' => $course_id, 'contextlevel' => CONTEXT_COURSE), 'id');
+
+        $instanceids = blocks_get_instanceids_for_context($course_context->id, false, CONTEXT_BLOCK);
+        $names_of_assigned_blocks = [];
+        foreach($instanceids as $instanceid) {
+            $names_of_assigned_blocks = array_merge($names_of_assigned_blocks, $DB->get_records('block_instances', array('id' => $instanceid), null, 'blockname'));
+        }
+        return $names_of_assigned_blocks;
     }
 
     /**
@@ -189,7 +209,7 @@ class course_reset_form extends moodleform {
      * @param array $files
      * @return array the errors that were found
      */
-    public function validation($data, $files) {
+    public function validation ($data, $files){
         global $DB;
 
         $course = get_course($data['id']);

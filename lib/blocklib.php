@@ -64,7 +64,7 @@ class block_not_on_page_exception extends moodle_exception {
      * @param int $instanceid the block instance id of the block that was looked for.
      * @param object $page the current page.
      */
-    public function __construct($instanceid, $page) {
+    public function __construct ($instanceid, $page){
         $a = new stdClass;
         $a->instanceid = $instanceid;
         $a->url = $page->url->out();
@@ -96,8 +96,8 @@ class block_manager {
      */
     protected $page;
 
-    /** @var array region name => 1.*/
-    protected $regions = array();
+    /** @var array region name => 1. */
+    protected $regions = array ();
 
     /** @var string the region where new blocks are added.*/
     protected $defaultregion = null;
@@ -123,21 +123,21 @@ class block_manager {
      * the ensure_instances_exist method.
      * @var array
      */
-    protected $blockinstances = array();
+    protected $blockinstances = array ();
 
     /**
      * array region-name => array(block_contents objects) what actually needs to
      * be displayed in each region.
      * @var array
      */
-    protected $visibleblockcontent = array();
+    protected $visibleblockcontent = array ();
 
     /**
      * array region-name => array(block_contents objects) extra block-like things
      * to be displayed in each region, before the real blocks.
      * @var array
      */
-    protected $extracontent = array();
+    protected $extracontent = array ();
 
     /**
      * Used by the block move id, to track whether a block is currently being moved.
@@ -163,7 +163,7 @@ class block_manager {
      * or a reasonable faxilimily. (See the comment at the top of this class
      * and {@link http://en.wikipedia.org/wiki/Duck_typing})
      */
-    public function __construct($page) {
+    public function __construct ($page){
         $this->page = $page;
     }
 
@@ -174,7 +174,7 @@ class block_manager {
      *
      * @return array the internal names of the regions on this page where block may appear.
      */
-    public function get_regions() {
+    public function get_regions (){
         if (is_null($this->defaultregion)) {
             $this->page->initialise_theme_and_output();
         }
@@ -189,7 +189,7 @@ class block_manager {
      * (Imagine that blocks were added with one theme selected, then you switched
      * to a theme with different block positions.)
      */
-    public function get_default_region() {
+    public function get_default_region (){
         $this->page->initialise_theme_and_output();
         return $this->defaultregion;
     }
@@ -199,7 +199,7 @@ class block_manager {
      *
      * @return array block name => record from block table.
      */
-    public function get_addable_blocks() {
+    public function get_addable_blocks (){
         $this->check_is_loaded();
 
         if (!is_null($this->addableblocks)) {
@@ -207,7 +207,7 @@ class block_manager {
         }
 
         // Lazy load.
-        $this->addableblocks = array();
+        $this->addableblocks = array ();
 
         $allblocks = blocks_get_record();
         if (empty($allblocks)) {
@@ -225,7 +225,8 @@ class block_manager {
                     !in_array($block->name, $requiredbythemeblocks) &&
                     ($bi->instance_allow_multiple() || !$this->is_block_present($block->name)) &&
                     blocks_name_allowed_in_format($block->name, $pageformat) &&
-                    $bi->user_can_addto($this->page)) {
+                    $bi->user_can_addto($this->page)
+            ) {
                 $block->title = $bi->get_title();
                 $this->addableblocks[$block->name] = $block;
             }
@@ -237,18 +238,17 @@ class block_manager {
 
     /**
      * Given a block name, find out of any of them are currently present in the page
-
      * @param string $blockname - the basic name of a block (eg "navigation")
      * @return boolean - is there one of these blocks in the current page?
      */
-    public function is_block_present($blockname) {
+    public function is_block_present ($blockname){
         if (empty($this->blockinstances)) {
             return false;
         }
 
         $requiredbythemeblocks = self::get_required_by_theme_block_types();
-        foreach ($this->blockinstances as $region) {
-            foreach ($region as $instance) {
+        foreach($this->blockinstances as $region) {
+            foreach($region as $instance) {
                 if (empty($instance->instance->blockname)) {
                     continue;
                 }
@@ -272,9 +272,9 @@ class block_manager {
      * @param boolean $includeinvisible if false (default) only check 'visible' blocks, that is, blocks enabled by the admin.
      * @return boolean true if this block in installed.
      */
-    public function is_known_block_type($blockname, $includeinvisible = false) {
+    public function is_known_block_type ($blockname, $includeinvisible = false){
         $blocks = $this->get_installed_blocks();
-        foreach ($blocks as $block) {
+        foreach($blocks as $block) {
             if ($block->name == $blockname && ($includeinvisible || $block->visible)) {
                 return true;
             }
@@ -288,7 +288,7 @@ class block_manager {
      * @param string $region a region name
      * @return boolean true if this region exists on this page.
      */
-    public function is_known_region($region) {
+    public function is_known_region ($region){
         if (empty($region)) {
             return false;
         }
@@ -301,7 +301,7 @@ class block_manager {
      * @param string $region a block region that exists on this page.
      * @return array of block instances.
      */
-    public function get_blocks_for_region($region) {
+    public function get_blocks_for_region ($region){
         $this->check_is_loaded();
         $this->ensure_instances_exist($region);
         return $this->blockinstances[$region];
@@ -313,7 +313,7 @@ class block_manager {
      * @param string $region a block region that exists on this page.
      * @return array of block block_contents objects for all the blocks in a region.
      */
-    public function get_content_for_region($region, $output) {
+    public function get_content_for_region ($region, $output){
         $this->check_is_loaded();
         $this->ensure_content_created($region, $output);
         return $this->visibleblockcontent[$region];
@@ -326,9 +326,9 @@ class block_manager {
      * between ones with weight 2 and 3, say ($weight would be 2.5).
      * @return string URL for moving block $this->movingblock to this position.
      */
-    protected function get_move_target_url($region, $weight) {
-        return new moodle_url($this->page->url, array('bui_moveid' => $this->movingblock,
-                'bui_newregion' => $region, 'bui_newweight' => $weight, 'sesskey' => sesskey()));
+    protected function get_move_target_url ($region, $weight){
+        return new moodle_url($this->page->url, array ('bui_moveid'  =>  $this->movingblock,
+                'bui_newregion'  =>  $region, 'bui_newweight'  =>  $weight, 'sesskey'  =>  sesskey()));
     }
 
     /**
@@ -347,7 +347,7 @@ class block_manager {
      * @param core_renderer $output a core_renderer. normally the global $OUTPUT.
      * @return boolean Whether there is anything in this region.
      */
-    public function region_has_content($region, $output) {
+    public function region_has_content ($region, $output){
 
         if (!$this->is_known_region($region)) {
             return false;
@@ -369,7 +369,7 @@ class block_manager {
      *
      * @return array contents of the block table.
      */
-    public function get_installed_blocks() {
+    public function get_installed_blocks (){
         global $DB;
         if (is_null($this->allblocks)) {
             $this->allblocks = $DB->get_records('block');
@@ -380,7 +380,7 @@ class block_manager {
     /**
      * @return array names of block types that must exist on every page with this theme.
      */
-    public static function get_required_by_theme_block_types() {
+    public static function get_required_by_theme_block_types (){
         global $CFG, $PAGE;
         $requiredbythemeblocks = false;
         if (isset($PAGE->theme->requiredblocks)) {
@@ -388,9 +388,9 @@ class block_manager {
         }
 
         if ($requiredbythemeblocks === false) {
-            return array('navigation', 'settings');
+            return array ('navigation', 'settings');
         } else if ($requiredbythemeblocks === '') {
-            return array();
+            return array ();
         } else if (is_string($requiredbythemeblocks)) {
             return explode(',', $requiredbythemeblocks);
         } else {
@@ -403,7 +403,7 @@ class block_manager {
      *
      * @param mixed $blockidorname string or int
      */
-    public static function protect_block($blockidorname) {
+    public static function protect_block ($blockidorname){
         global $DB;
 
         $syscontext = context_system::instance();
@@ -412,9 +412,9 @@ class block_manager {
 
         $block = false;
         if (is_int($blockidorname)) {
-            $block = $DB->get_record('block', array('id' => $blockidorname), 'id, name', MUST_EXIST);
+            $block = $DB->get_record('block', array ('id'  =>  $blockidorname), 'id, name', MUST_EXIST);
         } else {
-            $block = $DB->get_record('block', array('name' => $blockidorname), 'id, name', MUST_EXIST);
+            $block = $DB->get_record('block', array ('name'  =>  $blockidorname), 'id, name', MUST_EXIST);
         }
         $undeletableblocktypes = self::get_undeletable_block_types();
         if (!in_array($block->name, $undeletableblocktypes)) {
@@ -429,7 +429,7 @@ class block_manager {
      *
      * @param mixed $blockidorname string or int
      */
-    public static function unprotect_block($blockidorname) {
+    public static function unprotect_block ($blockidorname){
         global $DB;
 
         $syscontext = context_system::instance();
@@ -438,13 +438,13 @@ class block_manager {
 
         $block = false;
         if (is_int($blockidorname)) {
-            $block = $DB->get_record('block', array('id' => $blockidorname), 'id, name', MUST_EXIST);
+            $block = $DB->get_record('block', array ('id'  =>  $blockidorname), 'id, name', MUST_EXIST);
         } else {
-            $block = $DB->get_record('block', array('name' => $blockidorname), 'id, name', MUST_EXIST);
+            $block = $DB->get_record('block', array ('name'  =>  $blockidorname), 'id, name', MUST_EXIST);
         }
         $undeletableblocktypes = self::get_undeletable_block_types();
         if (in_array($block->name, $undeletableblocktypes)) {
-            $undeletableblocktypes = array_diff($undeletableblocktypes, array($block->name));
+            $undeletableblocktypes = array_diff($undeletableblocktypes, array ($block->name));
             set_config('undeletableblocktypes', implode(',', $undeletableblocktypes));
             add_to_config_log('block_protect', "1", "0", $block->name);
         }
@@ -456,7 +456,7 @@ class block_manager {
      *
      * @return array names of block types that cannot be added or deleted. E.g. array('navigation','settings').
      */
-    public static function get_undeletable_block_types() {
+    public static function get_undeletable_block_types (){
         global $CFG, $PAGE;
         $undeletableblocks = false;
         if (isset($CFG->undeletableblocktypes)) {
@@ -464,7 +464,7 @@ class block_manager {
         }
 
         if (empty($undeletableblocks)) {
-            return array();
+            return array ();
         } else if (is_string($undeletableblocks)) {
             return explode(',', $undeletableblocks);
         } else {
@@ -481,7 +481,7 @@ class block_manager {
      *      This is an internal name, like 'side-pre', not a string to display in the UI.
      * @param bool $custom True if this is a custom block region, being added by the page rather than the theme layout.
      */
-    public function add_region($region, $custom = true) {
+    public function add_region ($region, $custom = true){
         global $SESSION;
         $this->check_not_yet_loaded();
         if ($custom) {
@@ -494,9 +494,9 @@ class block_manager {
             // This allows us to check, when performing block actions, that unrecognised regions can be worked with.
             $type = $this->page->pagetype;
             if (!isset($SESSION->custom_block_regions)) {
-                $SESSION->custom_block_regions = array($type => array($region));
+                $SESSION->custom_block_regions = array ($type  =>  array ($region));
             } else if (!isset($SESSION->custom_block_regions[$type])) {
-                $SESSION->custom_block_regions[$type] = array($region);
+                $SESSION->custom_block_regions[$type] = array ($region);
             } else if (!in_array($region, $SESSION->custom_block_regions[$type])) {
                 $SESSION->custom_block_regions[$type][] = $region;
             }
@@ -510,8 +510,8 @@ class block_manager {
      *
      * @param array $regions this utility method calls add_region for each array element.
      */
-    public function add_regions($regions, $custom = true) {
-        foreach ($regions as $region) {
+    public function add_regions ($regions, $custom = true){
+        foreach($regions as $region) {
             $this->add_region($region, $custom);
         }
     }
@@ -521,10 +521,10 @@ class block_manager {
      *
      * @param string $pagetype
      */
-    public function add_custom_regions_for_pagetype($pagetype) {
+    public function add_custom_regions_for_pagetype ($pagetype){
         global $SESSION;
         if (isset($SESSION->custom_block_regions[$pagetype])) {
-            foreach ($SESSION->custom_block_regions[$pagetype] as $customregion) {
+            foreach($SESSION->custom_block_regions[$pagetype] as $customregion) {
                 $this->add_region($customregion, false);
             }
         }
@@ -537,7 +537,7 @@ class block_manager {
      * blocks should be added by default, and where any blocks from an
      * unrecognised region are shown.
      */
-    public function set_default_region($defaultregion) {
+    public function set_default_region ($defaultregion){
         $this->check_not_yet_loaded();
         if ($defaultregion) {
             $this->check_region_is_known($defaultregion);
@@ -552,7 +552,7 @@ class block_manager {
      * @param block_contents $bc the content of the block-like thing.
      * @param string $region a block region that exists on this page.
      */
-    public function add_fake_block($bc, $region) {
+    public function add_fake_block ($bc, $region){
         $this->page->initialise_theme_and_output();
         if (!$this->is_known_region($region)) {
             $region = $this->get_default_region();
@@ -575,7 +575,7 @@ class block_manager {
      * @param string $region
      * @return bool True if all of the blocks within that region are docked
      */
-    public function region_completely_docked($region, $output) {
+    public function region_completely_docked ($region, $output){
         global $CFG;
         // If theme doesn't allow docking or allowblockstodock is not set, then return.
         if (!$this->page->theme->enable_dock || empty($CFG->allowblockstodock)) {
@@ -598,8 +598,8 @@ class block_manager {
             // If the region has no content then nothing is docked at all of course.
             return false;
         }
-        foreach ($this->visibleblockcontent[$region] as $instance) {
-            if (!get_user_preferences('docked_block_instance_'.$instance->blockinstanceid, 0)) {
+        foreach($this->visibleblockcontent[$region] as $instance) {
+            if (!get_user_preferences('docked_block_instance_' . $instance->blockinstanceid, 0)) {
                 return false;
             }
         }
@@ -613,7 +613,7 @@ class block_manager {
      * @param array|string $regions array of regions (or single region)
      * @return bool True if any of the blocks within that region are docked
      */
-    public function region_uses_dock($regions, $output) {
+    public function region_uses_dock ($regions, $output){
         if (!$this->page->theme->enable_dock) {
             return false;
         }
@@ -621,7 +621,7 @@ class block_manager {
         foreach((array)$regions as $region) {
             $this->ensure_content_created($region, $output);
             foreach($this->visibleblockcontent[$region] as $instance) {
-                if(!empty($instance->content) && get_user_preferences('docked_block_instance_'.$instance->blockinstanceid, 0)) {
+                if(!empty($instance->content) && get_user_preferences('docked_block_instance_' . $instance->blockinstanceid, 0)) {
                     return true;
                 }
             }
@@ -639,7 +639,7 @@ class block_manager {
      *      true - load hidden blocks.
      *      false - don't load hidden blocks.
      */
-    public function load_blocks($includeinvisible = null) {
+    public function load_blocks ($includeinvisible = null){
         global $DB, $CFG;
 
         if (!is_null($this->birecordsbyregion)) {
@@ -649,7 +649,7 @@ class block_manager {
 
         if ($CFG->version < 2009050619) {
             // Upgrade/install not complete. Don't try too show any blocks.
-            $this->birecordsbyregion = array();
+            $this->birecordsbyregion = array ();
             return;
         }
 
@@ -658,7 +658,7 @@ class block_manager {
             $this->page->initialise_theme_and_output();
             // If there are still no block regions, then there are no blocks on this page.
             if (empty($this->regions)) {
-                $this->birecordsbyregion = array();
+                $this->birecordsbyregion = array ();
                 return;
             }
         }
@@ -672,8 +672,8 @@ class block_manager {
         // Exclude auto created blocks if they are not undeletable in this theme.
         $requiredbytheme = $this->get_required_by_theme_block_types();
         $requiredbythemecheck = '';
-        $requiredbythemeparams = array();
-        $requiredbythemenotparams = array();
+        $requiredbythemeparams = array ();
+        $requiredbythemenotparams = array ();
         if (!empty($requiredbytheme)) {
             list($testsql, $requiredbythemeparams) = $DB->get_in_or_equal($requiredbytheme, SQL_PARAMS_NAMED, 'requiredbytheme');
             list($testnotsql, $requiredbythemenotparams) = $DB->get_in_or_equal($requiredbytheme, SQL_PARAMS_NAMED,
@@ -695,7 +695,7 @@ class block_manager {
 
         $context = $this->page->context;
         $contexttest = 'bi.parentcontextid IN (:contextid2, :contextid3)';
-        $parentcontextparams = array();
+        $parentcontextparams = array ();
         $parentcontextids = $context->get_parent_context_ids();
         if ($parentcontextids) {
             list($parentcontexttest, $parentcontextparams) =
@@ -711,14 +711,14 @@ class block_manager {
         $ccjoin = "LEFT JOIN {context} ctx ON (ctx.instanceid = bi.id AND ctx.contextlevel = :contextlevel)";
 
         $systemcontext = context_system::instance();
-        $params = array(
-            'contextlevel' => CONTEXT_BLOCK,
-            'subpage1' => $this->page->subpage,
-            'subpage2' => $this->page->subpage,
-            'contextid1' => $context->id,
-            'contextid2' => $context->id,
-            'contextid3' => $systemcontext->id,
-            'pagetype' => $this->page->pagetype,
+        $params = array (
+            'contextlevel'  =>  CONTEXT_BLOCK,
+            'subpage1'  =>  $this->page->subpage,
+            'subpage2'  =>  $this->page->subpage,
+            'contextid1'  =>  $context->id,
+            'contextid2'  =>  $context->id,
+            'contextid3'  =>  $systemcontext->id,
+            'pagetype'  =>  $this->page->pagetype,
         );
         if ($this->page->subpage === '') {
             $params['subpage1'] = '';
@@ -766,8 +766,8 @@ class block_manager {
         $blockinstances = $DB->get_recordset_sql($sql, $allparams);
 
         $this->birecordsbyregion = $this->prepare_per_region_arrays();
-        $unknown = array();
-        foreach ($blockinstances as $bi) {
+        $unknown = array ();
+        foreach($blockinstances as $bi) {
             context_helper::preload_from_record($bi);
             if ($this->is_known_region($bi->region)) {
                 $this->birecordsbyregion[$bi->region][] = $bi;
@@ -796,7 +796,7 @@ class block_manager {
      * @param string|null $pagetypepattern which page types this block should appear on. Defaults to just the current page type.
      * @param string|null $subpagepattern which subpage this block should appear on. NULL = any (the default), otherwise only the specified subpage.
      */
-    public function add_block($blockname, $region, $weight, $showinsubcontexts, $pagetypepattern = NULL, $subpagepattern = NULL) {
+    public function add_block ($blockname, $region, $weight, $showinsubcontexts, $pagetypepattern = NULL, $subpagepattern = NULL){
         global $DB;
         // Allow invisible blocks because this is used when adding default page blocks, which
         // might include invisible ones if the user makes some default blocks invisible
@@ -827,7 +827,7 @@ class block_manager {
         }
     }
 
-    public function add_block_at_end_of_default_region($blockname) {
+    public function add_block_at_end_of_default_region ($blockname){
         if (empty($this->birecordsbyregion)) {
             // No blocks or block regions exist yet.
             return;
@@ -886,11 +886,11 @@ class block_manager {
      * @param boolean $showinsubcontexts optional. Passed to {@link add_block()}
      * @param integer $weight optional. Determines the starting point that the blocks are added in the region.
      */
-    public function add_blocks($blocks, $pagetypepattern = NULL, $subpagepattern = NULL, $showinsubcontexts=false, $weight=0) {
+    public function add_blocks ($blocks, $pagetypepattern = NULL, $subpagepattern = NULL, $showinsubcontexts=false, $weight=0){
         $initialweight = $weight;
         $this->add_regions(array_keys($blocks), false);
-        foreach ($blocks as $region => $regionblocks) {
-            foreach ($regionblocks as $offset => $blockname) {
+        foreach($blocks as $region  =>  $regionblocks) {
+            foreach($regionblocks as $offset  =>  $blockname) {
                 $weight = $initialweight + $offset;
                 $this->add_block($blockname, $region, $weight, $showinsubcontexts, $pagetypepattern, $subpagepattern);
             }
@@ -907,7 +907,7 @@ class block_manager {
      * @param $newregion the new region name.
      * @param $newweight the new weight.
      */
-    public function reposition_block($blockinstanceid, $newregion, $newweight) {
+    public function reposition_block ($blockinstanceid, $newregion, $newweight){
         global $DB;
 
         $this->check_region_is_known($newregion);
@@ -916,7 +916,8 @@ class block_manager {
         $bi = $inst->instance;
         if ($bi->weight == $bi->defaultweight && $bi->region == $bi->defaultregion &&
                 !$bi->showinsubcontexts && strpos($bi->pagetypepattern, '*') === false &&
-                (!$this->page->subpage || $bi->subpagepattern)) {
+                (!$this->page->subpage || $bi->subpagepattern)
+        ) {
 
             // Set default position
             $newbi = new stdClass;
@@ -964,8 +965,8 @@ class block_manager {
      * @param integer $instanceid
      * @return block_base
      */
-    public function find_instance($instanceid) {
-        foreach ($this->regions as $region => $notused) {
+    public function find_instance ($instanceid){
+        foreach($this->regions as $region  =>  $notused) {
             $this->ensure_instances_exist($region);
             foreach($this->blockinstances[$region] as $instance) {
                 if ($instance->instance->id == $instanceid) {
@@ -983,7 +984,7 @@ class block_manager {
      *
      * @return void Throws coding exception if already loaded
      */
-    protected function check_not_yet_loaded() {
+    protected function check_not_yet_loaded (){
         if (!is_null($this->birecordsbyregion)) {
             throw new coding_exception('block_manager has already loaded the blocks, to it is too late to change things that might affect which blocks are visible.');
         }
@@ -996,7 +997,7 @@ class block_manager {
      *
      * @return void Throws coding exception if already loaded
      */
-    protected function check_is_loaded() {
+    protected function check_is_loaded (){
         if (is_null($this->birecordsbyregion)) {
             throw new coding_exception('block_manager has not yet loaded the blocks, to it is too soon to request the information you asked for.');
         }
@@ -1009,7 +1010,7 @@ class block_manager {
      * @param bool $includeinvisible Include disabled block types in the initial pass
      * @return void Coding Exception thrown if unknown or not enabled
      */
-    protected function check_known_block_type($blockname, $includeinvisible = false) {
+    protected function check_known_block_type ($blockname, $includeinvisible = false){
         if (!$this->is_known_block_type($blockname, $includeinvisible)) {
             if ($this->is_known_block_type($blockname, true)) {
                 throw new coding_exception('Unknown block type ' . $blockname);
@@ -1025,7 +1026,7 @@ class block_manager {
      * @param string $region
      * @return void Coding Exception thrown if the region is not known
      */
-    protected function check_region_is_known($region) {
+    protected function check_region_is_known ($region){
         if (!$this->is_known_region($region)) {
             throw new coding_exception('Trying to reference an unknown block region ' . $region);
         }
@@ -1037,10 +1038,10 @@ class block_manager {
      * @return array an array where the array keys are the region names, and the array
      * values are empty arrays.
      */
-    protected function prepare_per_region_arrays() {
-        $result = array();
-        foreach ($this->regions as $region => $notused) {
-            $result[$region] = array();
+    protected function prepare_per_region_arrays (){
+        $result = array ();
+        foreach($this->regions as $region  =>  $notused) {
+            $result[$region] = array ();
         }
         return $result;
     }
@@ -1051,9 +1052,9 @@ class block_manager {
      * @param array $birecords An array of block instance records
      * @return array An array of instantiated block_instance objects
      */
-    protected function create_block_instances($birecords) {
-        $results = array();
-        foreach ($birecords as $record) {
+    protected function create_block_instances ($birecords){
+        $results = array ();
+        foreach($birecords as $record) {
             if ($blockobject = block_instance($record->blockname, $record, $this->page)) {
                 $results[] = $blockobject;
             }
@@ -1071,19 +1072,19 @@ class block_manager {
      * These blocks that are auto-created have requiredbytheme set on the block instance
      * so they are only visible on themes that require them.
      */
-    public function create_all_block_instances() {
+    public function create_all_block_instances (){
         global $PAGE;
         $missing = false;
 
         // If there are any un-removable blocks that were not created - force them.
         $requiredbytheme = $this->get_required_by_theme_block_types();
         if (!$this->fakeblocksonly) {
-            foreach ($requiredbytheme as $forced) {
+            foreach($requiredbytheme as $forced) {
                 if (empty($forced)) {
                     continue;
                 }
                 $found = false;
-                foreach ($this->get_regions() as $region) {
+                foreach($this->get_regions() as $region) {
                     foreach($this->birecordsbyregion[$region] as $instance) {
                         if ($instance->blockname == $forced) {
                             $found = true;
@@ -1102,7 +1103,7 @@ class block_manager {
             $this->birecordsbyregion = null;
             $this->load_blocks();
         }
-        foreach ($this->get_regions() as $region) {
+        foreach($this->get_regions() as $region) {
             $this->ensure_instances_exist($region);
         }
 
@@ -1115,7 +1116,7 @@ class block_manager {
      *
      * @param string $blockname the name of the block type.
      */
-    protected function add_block_required_by_theme($blockname) {
+    protected function add_block_required_by_theme ($blockname){
         global $DB;
 
         if (empty($this->birecordsbyregion)) {
@@ -1129,7 +1130,7 @@ class block_manager {
         }
 
         // Never add a duplicate block required by theme.
-        if ($DB->record_exists('block_instances', array('blockname' => $blockname, 'requiredbytheme' => 1))) {
+        if ($DB->record_exists('block_instances', array ('blockname'  =>  $blockname, 'requiredbytheme'  =>  1))) {
             return;
         }
 
@@ -1165,8 +1166,8 @@ class block_manager {
      * @param string $region the region name.
      * @return array An array of block_content (and possibly block_move_target) objects.
      */
-    protected function create_block_contents($instances, $output, $region) {
-        $results = array();
+    protected function create_block_contents ($instances, $output, $region){
+        $results = array ();
 
         $lastweight = 0;
         $lastblock = 0;
@@ -1177,7 +1178,7 @@ class block_manager {
             }
         }
 
-        foreach ($instances as $instance) {
+        foreach($instances as $instance) {
             $content = $instance->get_content_for_output($output);
             if (empty($content)) {
                 continue;
@@ -1185,7 +1186,7 @@ class block_manager {
 
             if ($this->movingblock && $lastweight != $instance->instance->weight &&
                     $content->blockinstanceid != $this->movingblock && $lastblock != $this->movingblock) {
-                $results[] = new block_move_target($this->get_move_target_url($region, ($lastweight + $instance->instance->weight)/2));
+                $results[] = new block_move_target($this->get_move_target_url($region, ($lastweight + $instance->instance->weight) / 2));
             }
 
             if ($content->blockinstanceid == $this->movingblock) {
@@ -1210,7 +1211,7 @@ class block_manager {
      *
      * @param string $region Check for bi's with the instance with this name
      */
-    protected function ensure_instances_exist($region) {
+    protected function ensure_instances_exist ($region){
         $this->check_region_is_known($region);
         if (!array_key_exists($region, $this->blockinstances)) {
             $this->blockinstances[$region] =
@@ -1223,10 +1224,10 @@ class block_manager {
      *
      * @param string $region The name of the region to check
      */
-    public function ensure_content_created($region, $output) {
+    public function ensure_content_created ($region, $output){
         $this->ensure_instances_exist($region);
         if (!array_key_exists($region, $this->visibleblockcontent)) {
-            $contents = array();
+            $contents = array ();
             if (array_key_exists($region, $this->extracontent)) {
                 $contents = $this->extracontent[$region];
             }
@@ -1251,11 +1252,11 @@ class block_manager {
      * @param $output The core_renderer to use when generating the output. (Need to get icon paths.)
      * @return an array in the format for {@link block_contents::$controls}
      */
-    public function edit_controls($block) {
+    public function edit_controls ($block){
         global $CFG;
 
-        $controls = array();
-        $actionurl = $this->page->url->out(false, array('sesskey'=> sesskey()));
+        $controls = array ();
+        $actionurl = $this->page->url->out(false, array ('sesskey'=> sesskey()));
         $blocktitle = $block->title;
         if (empty($blocktitle)) {
             $blocktitle = $block->arialabel;
@@ -1265,10 +1266,10 @@ class block_manager {
             // Move icon.
             $str = new lang_string('moveblock', 'block', $blocktitle);
             $controls[] = new action_menu_link_primary(
-                new moodle_url($actionurl, array('bui_moveid' => $block->instance->id)),
-                new pix_icon('t/move', $str, 'moodle', array('class' => 'iconsmall', 'title' => '')),
+                new moodle_url($actionurl, array ('bui_moveid'  =>  $block->instance->id)),
+                new pix_icon('t/move', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  '')),
                 $str,
-                array('class' => 'editing_move')
+                array ('class'  =>  'editing_move')
             );
 
         }
@@ -1277,10 +1278,10 @@ class block_manager {
             // Edit config icon - always show - needed for positioning UI.
             $str = new lang_string('configureblock', 'block', $blocktitle);
             $controls[] = new action_menu_link_secondary(
-                new moodle_url($actionurl, array('bui_editid' => $block->instance->id)),
-                new pix_icon('t/edit', $str, 'moodle', array('class' => 'iconsmall', 'title' => '')),
+                new moodle_url($actionurl, array ('bui_editid'  =>  $block->instance->id)),
+                new pix_icon('t/edit', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  '')),
                 $str,
-                array('class' => 'editing_edit')
+                array ('class'  =>  'editing_edit')
             );
 
         }
@@ -1289,51 +1290,51 @@ class block_manager {
             // Show/hide icon.
             if ($block->instance->visible) {
                 $str = new lang_string('hideblock', 'block', $blocktitle);
-                $url = new moodle_url($actionurl, array('bui_hideid' => $block->instance->id));
-                $icon = new pix_icon('t/hide', $str, 'moodle', array('class' => 'iconsmall', 'title' => ''));
-                $attributes = array('class' => 'editing_hide');
+                $url = new moodle_url($actionurl, array ('bui_hideid'  =>  $block->instance->id));
+                $icon = new pix_icon('t/hide', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  ''));
+                $attributes = array ('class'  =>  'editing_hide');
             } else {
                 $str = new lang_string('showblock', 'block', $blocktitle);
-                $url = new moodle_url($actionurl, array('bui_showid' => $block->instance->id));
-                $icon = new pix_icon('t/show', $str, 'moodle', array('class' => 'iconsmall', 'title' => ''));
-                $attributes = array('class' => 'editing_show');
+                $url = new moodle_url($actionurl, array ('bui_showid'  =>  $block->instance->id));
+                $icon = new pix_icon('t/show', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  ''));
+                $attributes = array ('class'  =>  'editing_show');
             }
             $controls[] = new action_menu_link_secondary($url, $icon, $str, $attributes);
         }
 
         // Assign roles.
         if (get_assignable_roles($block->context, ROLENAME_SHORT)) {
-            $rolesurl = new moodle_url('/admin/roles/assign.php', array('contextid' => $block->context->id,
-                'returnurl' => $this->page->url->out_as_local_url()));
+            $rolesurl = new moodle_url('/admin/roles/assign.php', array ('contextid'  =>  $block->context->id,
+                'returnurl'  =>  $this->page->url->out_as_local_url()));
             $str = new lang_string('assignrolesinblock', 'block', $blocktitle);
             $controls[] = new action_menu_link_secondary(
                 $rolesurl,
-                new pix_icon('i/assignroles', $str, 'moodle', array('class' => 'iconsmall', 'title' => '')),
-                $str, array('class' => 'editing_assignroles')
+                new pix_icon('i/assignroles', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  '')),
+                $str, array ('class'  =>  'editing_assignroles')
             );
         }
 
         // Permissions.
         if (has_capability('moodle/role:review', $block->context) or get_overridable_roles($block->context)) {
-            $rolesurl = new moodle_url('/admin/roles/permissions.php', array('contextid' => $block->context->id,
-                'returnurl' => $this->page->url->out_as_local_url()));
+            $rolesurl = new moodle_url('/admin/roles/permissions.php', array ('contextid'  =>  $block->context->id,
+                'returnurl'  =>  $this->page->url->out_as_local_url()));
             $str = get_string('permissions', 'role');
             $controls[] = new action_menu_link_secondary(
                 $rolesurl,
-                new pix_icon('i/permissions', $str, 'moodle', array('class' => 'iconsmall', 'title' => '')),
-                $str, array('class' => 'editing_permissions')
+                new pix_icon('i/permissions', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  '')),
+                $str, array ('class'  =>  'editing_permissions')
             );
         }
 
         // Change permissions.
-        if (has_any_capability(array('moodle/role:safeoverride', 'moodle/role:override', 'moodle/role:assign'), $block->context)) {
-            $rolesurl = new moodle_url('/admin/roles/check.php', array('contextid' => $block->context->id,
-                'returnurl' => $this->page->url->out_as_local_url()));
+        if (has_any_capability(array ('moodle/role:safeoverride', 'moodle/role:override', 'moodle/role:assign'), $block->context)) {
+            $rolesurl = new moodle_url('/admin/roles/check.php', array ('contextid'  =>  $block->context->id,
+                'returnurl'  =>  $this->page->url->out_as_local_url()));
             $str = get_string('checkpermissions', 'role');
             $controls[] = new action_menu_link_secondary(
                 $rolesurl,
-                new pix_icon('i/checkpermissions', $str, 'moodle', array('class' => 'iconsmall', 'title' => '')),
-                $str, array('class' => 'editing_checkroles')
+                new pix_icon('i/checkpermissions', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  '')),
+                $str, array ('class'  =>  'editing_checkroles')
             );
         }
 
@@ -1341,10 +1342,10 @@ class block_manager {
             // Delete icon.
             $str = new lang_string('deleteblock', 'block', $blocktitle);
             $controls[] = new action_menu_link_secondary(
-                new moodle_url($actionurl, array('bui_deleteid' => $block->instance->id)),
-                new pix_icon('t/delete', $str, 'moodle', array('class' => 'iconsmall', 'title' => '')),
+                new moodle_url($actionurl, array ('bui_deleteid'  =>  $block->instance->id)),
+                new pix_icon('t/delete', $str, 'moodle', array ('class'  =>  'iconsmall', 'title'  =>  '')),
                 $str,
-                array('class' => 'editing_delete')
+                array ('class'  =>  'editing_delete')
             );
         }
 
@@ -1355,7 +1356,7 @@ class block_manager {
      * @param block_base $block a block that appears on this page.
      * @return boolean boolean whether the currently logged in user is allowed to delete this block.
      */
-    protected function user_can_delete_block($block) {
+    protected function user_can_delete_block ($block){
         return $this->page->user_can_edit_blocks() && $block->user_can_edit() &&
                 $block->user_can_addto($this->page) &&
                 !in_array($block->instance->blockname, self::get_undeletable_block_types()) &&
@@ -1367,7 +1368,7 @@ class block_manager {
      *
      * @return boolean true if anything was done. False if not.
      */
-    public function process_url_actions() {
+    public function process_url_actions (){
         if (!$this->page->user_is_editing()) {
             return false;
         }
@@ -1380,7 +1381,7 @@ class block_manager {
      * Handle adding a block.
      * @return boolean true if anything was done. False if not.
      */
-    public function process_url_add() {
+    public function process_url_add (){
         global $CFG, $PAGE, $OUTPUT;
 
         $blocktype = optional_param('bui_addblock', null, PARAM_PLUGIN);
@@ -1429,10 +1430,10 @@ class block_manager {
                 echo $OUTPUT->box(get_string('noblockstoaddhere'));
                 echo $OUTPUT->container($OUTPUT->action_link($addpage->url, get_string('back')), 'm-x-3 m-b-1');
             } else {
-                $url = new moodle_url($addpage->url, array('sesskey' => sesskey()));
+                $url = new moodle_url($addpage->url, array ('sesskey'  =>  sesskey()));
                 echo $OUTPUT->render_from_template('core/add_block_body',
-                    ['blocks' => array_values($addableblocks),
-                     'url' => '?' . $url->get_query_string(false)]);
+                    ['blocks'  =>  array_values($addableblocks),
+                     'url'  =>  '?' . $url->get_query_string(false)]);
                 echo $OUTPUT->container($OUTPUT->action_link($addpage->url, get_string('cancel')), 'm-x-3 m-b-1');
             }
 
@@ -1457,7 +1458,7 @@ class block_manager {
      * Handle deleting a block.
      * @return boolean true if anything was done. False if not.
      */
-    public function process_url_delete() {
+    public function process_url_delete (){
         global $CFG, $PAGE, $OUTPUT;
 
         $blockid = optional_param('bui_deleteid', null, PARAM_INT);
@@ -1524,7 +1525,7 @@ class block_manager {
             $PAGE->set_title($blocktitle . ': ' . $strdeletecheck);
             $PAGE->set_heading($site->fullname);
             echo $OUTPUT->header();
-            $confirmurl = new moodle_url($deletepage->url, array('sesskey' => sesskey(), 'bui_deleteid' => $block->instance->id, 'bui_confirm' => 1));
+            $confirmurl = new moodle_url($deletepage->url, array ('sesskey'  =>  sesskey(), 'bui_deleteid'  =>  $block->instance->id, 'bui_confirm'  =>  1));
             $cancelurl = new moodle_url($deletepage->url);
             $yesbutton = new single_button($confirmurl, get_string('yes'));
             $nobutton = new single_button($cancelurl, get_string('no'));
@@ -1545,7 +1546,7 @@ class block_manager {
      * Handle showing or hiding a block.
      * @return boolean true if anything was done. False if not.
      */
-    public function process_url_show_hide() {
+    public function process_url_show_hide (){
         if ($blockid = optional_param('bui_hideid', null, PARAM_INT)) {
             $newvisibility = 0;
         } else if ($blockid = optional_param('bui_showid', null, PARAM_INT)) {
@@ -1578,7 +1579,7 @@ class block_manager {
      * @return boolean true if the form was submitted and the new config saved. Does not
      *      return if the editing form was displayed. False otherwise.
      */
-    public function process_url_edit() {
+    public function process_url_edit (){
         global $CFG, $DB, $PAGE, $OUTPUT;
 
         $blockid = optional_param('bui_editid', null, PARAM_INT);
@@ -1666,19 +1667,19 @@ class block_manager {
                             // The user wants to show the block across the entire site
                             $bi->parentcontextid = $systemcontext->id;
                             $bi->showinsubcontexts = true;
-                            $bi->pagetypepattern  = '*';
+                            $bi->pagetypepattern = '*';
                             break;
                         case BUI_CONTEXTS_FRONTPAGE_SUBS:
                             // The user wants the block shown on the front page and all subcontexts
                             $bi->parentcontextid = $frontpagecontext->id;
                             $bi->showinsubcontexts = true;
-                            $bi->pagetypepattern  = '*';
+                            $bi->pagetypepattern = '*';
                             break;
                         case BUI_CONTEXTS_FRONTPAGE_ONLY:
                             // The user want to show the front page on the frontpage only
                             $bi->parentcontextid = $frontpagecontext->id;
                             $bi->showinsubcontexts = false;
-                            $bi->pagetypepattern  = 'site-index';
+                            $bi->pagetypepattern = 'site-index';
                             // This is the only relevant page type anyway but we'll set it explicitly just
                             // in case the front page grows site-index-* subpages of its own later
                             break;
@@ -1714,7 +1715,7 @@ class block_manager {
             } else {
                 $config = new stdClass;
             }
-            foreach ($data as $configfield => $value) {
+            foreach($data as $configfield  =>  $value) {
                 if (strpos($configfield, 'config_') !== 0) {
                     continue;
                 }
@@ -1731,7 +1732,7 @@ class block_manager {
                     $data->bui_weight != $data->bui_defaultweight;
 
             if ($block->instance->blockpositionid && !$needbprecord) {
-                $DB->delete_records('block_positions', array('id' => $block->instance->blockpositionid));
+                $DB->delete_records('block_positions', array ('id'  =>  $block->instance->blockpositionid));
 
             } else if ($block->instance->blockpositionid && $needbprecord) {
                 $bp->id = $block->instance->blockpositionid;
@@ -1780,7 +1781,7 @@ class block_manager {
      * @return boolean true if the form was submitted and the new config saved. Does not
      *      return if the editing form was displayed. False otherwise.
      */
-    public function process_url_move() {
+    public function process_url_move (){
         global $CFG, $DB, $PAGE;
 
         $blockid = optional_param('bui_moveid', null, PARAM_INT);
@@ -1816,15 +1817,15 @@ class block_manager {
         $minweight = -self::MAX_WEIGHT;
 
         // Initialise the used weights and spareweights array with the default values
-        $spareweights = array();
-        $usedweights = array();
-        for ($i = $minweight; $i <= $maxweight; $i++) {
+        $spareweights = array ();
+        $usedweights = array ();
+        for($i = $minweight; $i <= $maxweight; $i++) {
             $spareweights[$i] = $i;
-            $usedweights[$i] = array();
+            $usedweights[$i] = array ();
         }
 
         // Check each block and sort out where we have used weights
-        foreach ($blocks as $bi) {
+        foreach($blocks as $bi) {
             if ($bi->weight > $maxweight) {
                 // If this statement is true then the blocks weight is more than the
                 // current maximum. To ensure that we can get the best block position
@@ -1833,7 +1834,7 @@ class block_manager {
                 // the current max
                 $parseweight = $bi->weight;
                 while (!array_key_exists($parseweight, $usedweights)) {
-                    $usedweights[$parseweight] = array();
+                    $usedweights[$parseweight] = array ();
                     $spareweights[$parseweight] = $parseweight;
                     $parseweight--;
                 }
@@ -1844,7 +1845,7 @@ class block_manager {
                 // blocks weight (new minimum) to the current minimum
                 $parseweight = $bi->weight;
                 while (!array_key_exists($parseweight, $usedweights)) {
-                    $usedweights[$parseweight] = array();
+                    $usedweights[$parseweight] = array ();
                     $spareweights[$parseweight] = $parseweight;
                     $parseweight++;
                 }
@@ -1859,7 +1860,7 @@ class block_manager {
         // First we find the nearest gap in the list of weights.
         $bestdistance = max(abs($newweight - self::MAX_WEIGHT), abs($newweight + self::MAX_WEIGHT)) + 1;
         $bestgap = null;
-        foreach ($spareweights as $spareweight) {
+        foreach($spareweights as $spareweight) {
             if (abs($newweight - $spareweight) < $bestdistance) {
                 $bestdistance = abs($newweight - $spareweight);
                 $bestgap = $spareweight;
@@ -1877,9 +1878,9 @@ class block_manager {
         // Now we know the gap we are aiming for, so move all the blocks along.
         if ($bestgap < $newweight) {
             $newweight = floor($newweight);
-            for ($weight = $bestgap + 1; $weight <= $newweight; $weight++) {
+            for($weight = $bestgap + 1; $weight <= $newweight; $weight++) {
                 if (array_key_exists($weight, $usedweights)) {
-                    foreach ($usedweights[$weight] as $biid) {
+                    foreach($usedweights[$weight] as $biid) {
                         $this->reposition_block($biid, $newregion, $weight - 1);
                     }
                 }
@@ -1887,9 +1888,9 @@ class block_manager {
             $this->reposition_block($block->instance->id, $newregion, $newweight);
         } else {
             $newweight = ceil($newweight);
-            for ($weight = $bestgap - 1; $weight >= $newweight; $weight--) {
+            for($weight = $bestgap - 1; $weight >= $newweight; $weight--) {
                 if (array_key_exists($weight, $usedweights)) {
-                    foreach ($usedweights[$weight] as $biid) {
+                    foreach($usedweights[$weight] as $biid) {
                         $this->reposition_block($biid, $newregion, $weight + 1);
                     }
                 }
@@ -1908,7 +1909,7 @@ class block_manager {
      *
      * @param bool $setting
      */
-    public function show_only_fake_blocks($setting = true) {
+    public function show_only_fake_blocks ($setting = true){
         $this->fakeblocksonly = $setting;
     }
 }
@@ -1923,11 +1924,11 @@ class block_manager {
  * @param array $param parameters to pass to the method.
  * @return mixed whatever the method returns.
  */
-function block_method_result($blockname, $method, $param = NULL) {
-    if(!block_load_class($blockname)) {
+function block_method_result ($blockname, $method, $param = NULL){
+    if (!block_load_class($blockname)) {
         return NULL;
     }
-    return call_user_func(array('block_'.$blockname, $method), $param);
+    return call_user_func(array ('block_' . $blockname, $method), $param);
 }
 
 /**
@@ -1938,13 +1939,13 @@ function block_method_result($blockname, $method, $param = NULL) {
  * @param moodle_page $page the page this block is appearing on.
  * @return block_base the requested block instance.
  */
-function block_instance($blockname, $instance = NULL, $page = NULL) {
-    if(!block_load_class($blockname)) {
+function block_instance ($blockname, $instance = NULL, $page = NULL){
+    if (!block_load_class($blockname)) {
         return false;
     }
-    $classname = 'block_'.$blockname;
+    $classname = 'block_' . $blockname;
     $retval = new $classname;
-    if($instance !== NULL) {
+    if ($instance !== NULL) {
         if (is_null($page)) {
             global $PAGE;
             $page = $PAGE;
@@ -1960,25 +1961,25 @@ function block_instance($blockname, $instance = NULL, $page = NULL) {
  * @param string $blockname the name of the block.
  * @return boolean success or failure.
  */
-function block_load_class($blockname) {
+function block_load_class ($blockname){
     global $CFG;
 
-    if(empty($blockname)) {
+    if (empty($blockname)) {
         return false;
     }
 
-    $classname = 'block_'.$blockname;
+    $classname = 'block_' . $blockname;
 
-    if(class_exists($classname)) {
+    if (class_exists($classname)) {
         return true;
     }
 
-    $blockpath = $CFG->dirroot.'/blocks/'.$blockname.'/block_'.$blockname.'.php';
+    $blockpath = $CFG->dirroot . '/blocks/' . $blockname . '/block_' . $blockname . '.php';
 
     if (file_exists($blockpath)) {
-        require_once($CFG->dirroot.'/blocks/moodleblock.class.php');
+        require_once($CFG->dirroot . '/blocks/moodleblock.class.php');
         include_once($blockpath);
-    }else{
+    } else {
         //debugging("$blockname code does not exist in $blockpath", DEBUG_DEVELOPER);
         return false;
     }
@@ -1993,8 +1994,8 @@ function block_load_class($blockname) {
  * @param string $pagetype for example 'course-view-weeks' or 'mod-quiz-view'.
  * @return array an array of all the page type patterns that might match this page type.
  */
-function matching_page_type_patterns($pagetype) {
-    $patterns = array($pagetype);
+function matching_page_type_patterns ($pagetype){
+    $patterns = array ($pagetype);
     $bits = explode('-', $pagetype);
     if (count($bits) == 3 && $bits[0] == 'mod') {
         if ($bits[2] == 'view') {
@@ -2017,8 +2018,8 @@ function matching_page_type_patterns($pagetype) {
  * @param  string $pattern the pattern, e.g. 'mod-forum-*' or 'mod-quiz-view'.
  * @return array of all the page type patterns matching.
  */
-function matching_page_type_patterns_from_pattern($pattern) {
-    $patterns = array($pattern);
+function matching_page_type_patterns_from_pattern ($pattern){
+    $patterns = array ($pattern);
     if ($pattern === '*') {
         return $patterns;
     }
@@ -2044,7 +2045,7 @@ function matching_page_type_patterns_from_pattern($pattern) {
  * @param stdClass $currentcontext Current context of block
  * @return array an array of all the page type patterns that might match this page type.
  */
-function generate_page_type_patterns($pagetype, $parentcontext = null, $currentcontext = null) {
+function generate_page_type_patterns ($pagetype, $parentcontext = null, $currentcontext = null){
     global $CFG; // Required for includes bellow.
 
     $bits = explode('-', $pagetype);
@@ -2054,16 +2055,16 @@ function generate_page_type_patterns($pagetype, $parentcontext = null, $currentc
 
     //progressively strip pieces off the page type looking for a match
     $componentarray = null;
-    for ($i = count($bits); $i > 0; $i--) {
+    for($i = count($bits); $i > 0; $i--) {
         $possiblecomponentarray = array_slice($bits, 0, $i);
         $possiblecomponent = implode('', $possiblecomponentarray);
 
         // Check to see if the component is a core component
         if (array_key_exists($possiblecomponent, $core) && !empty($core[$possiblecomponent])) {
-            $libfile = $core[$possiblecomponent].'/lib.php';
+            $libfile = $core[$possiblecomponent] . '/lib.php';
             if (file_exists($libfile)) {
                 require_once($libfile);
-                $function = $possiblecomponent.'_page_type_list';
+                $function = $possiblecomponent . '_page_type_list';
                 if (function_exists($function)) {
                     if ($patterns = $function($pagetype, $parentcontext, $currentcontext)) {
                         break;
@@ -2079,13 +2080,13 @@ function generate_page_type_patterns($pagetype, $parentcontext = null, $currentc
             if (count($bits) > $i) {
                 $pluginname = $bits[$i];
                 $directory = core_component::get_plugin_directory($possiblecomponent, $pluginname);
-                if (!empty($directory)){
-                    $libfile = $directory.'/lib.php';
+                if (!empty($directory)) {
+                    $libfile = $directory . '/lib.php';
                     if (file_exists($libfile)) {
                         require_once($libfile);
-                        $function = $possiblecomponent.'_'.$pluginname.'_page_type_list';
+                        $function = $possiblecomponent . '_' . $pluginname . '_page_type_list';
                         if (!function_exists($function)) {
-                            $function = $pluginname.'_page_type_list';
+                            $function = $pluginname . '_page_type_list';
                         }
                         if (function_exists($function)) {
                             if ($patterns = $function($pagetype, $parentcontext, $currentcontext)) {
@@ -2099,10 +2100,10 @@ function generate_page_type_patterns($pagetype, $parentcontext = null, $currentc
             //we'll only get to here if we still don't have any patterns
             //the plugin type may have a callback
             $directory = $plugins[$possiblecomponent];
-            $libfile = $directory.'/lib.php';
+            $libfile = $directory . '/lib.php';
             if (file_exists($libfile)) {
                 require_once($libfile);
-                $function = $possiblecomponent.'_page_type_list';
+                $function = $possiblecomponent . '_page_type_list';
                 if (function_exists($function)) {
                     if ($patterns = $function($pagetype, $parentcontext, $currentcontext)) {
                         break;
@@ -2134,14 +2135,14 @@ function generate_page_type_patterns($pagetype, $parentcontext = null, $currentc
  * @param stdClass $currentcontext
  * @return array
  */
-function default_page_type_list($pagetype, $parentcontext = null, $currentcontext = null) {
+function default_page_type_list ($pagetype, $parentcontext = null, $currentcontext = null){
     // Generate page type patterns based on current page type if
     // callbacks haven't been defined
-    $patterns = array($pagetype => $pagetype);
+    $patterns = array ($pagetype  =>  $pagetype);
     $bits = explode('-', $pagetype);
     while (count($bits) > 0) {
         $pattern = implode('-', $bits) . '-*';
-        $pagetypestringname = 'page-'.str_replace('*', 'x', $pattern);
+        $pagetypestringname = 'page-' . str_replace('*', 'x', $pattern);
         // guessing page type description
         if (get_string_manager()->string_exists($pagetypestringname, 'pagetype')) {
             $patterns[$pattern] = get_string($pagetypestringname, 'pagetype');
@@ -2162,8 +2163,8 @@ function default_page_type_list($pagetype, $parentcontext = null, $currentcontex
  * @param stdClass $currentcontext
  * @return array
  */
-function my_page_type_list($pagetype, $parentcontext = null, $currentcontext = null) {
-    return array('my-index' => get_string('page-my-index', 'pagetype'));
+function my_page_type_list ($pagetype, $parentcontext = null, $currentcontext = null){
+    return array ('my-index'  =>  get_string('page-my-index', 'pagetype'));
 }
 
 /**
@@ -2175,13 +2176,13 @@ function my_page_type_list($pagetype, $parentcontext = null, $currentcontext = n
  * @param stdClass $currentcontext
  * @return array
  */
-function mod_page_type_list($pagetype, $parentcontext = null, $currentcontext = null) {
+function mod_page_type_list ($pagetype, $parentcontext = null, $currentcontext = null){
     $patterns = plugin_page_type_list($pagetype, $parentcontext, $currentcontext);
     if (empty($patterns)) {
         // if modules don't have callbacks
         // generate two default page type patterns for modules only
         $bits = explode('-', $pagetype);
-        $patterns = array($pagetype => $pagetype);
+        $patterns = array ($pagetype  =>  $pagetype);
         if ($bits[2] == 'view') {
             $patterns['mod-*-view'] = get_string('page-mod-x-view', 'pagetype');
         } else if ($bits[2] == 'index') {
@@ -2190,6 +2191,7 @@ function mod_page_type_list($pagetype, $parentcontext = null, $currentcontext = 
     }
     return $patterns;
 }
+
 /// Functions update the blocks if required by the request parameters ==========
 
 /**
@@ -2199,7 +2201,7 @@ function mod_page_type_list($pagetype, $parentcontext = null, $currentcontext = 
  * @return block_contents an appropriate block_contents, or null if the user
  * cannot add any blocks here.
  */
-function block_add_block_ui($page, $output) {
+function block_add_block_ui ($page, $output){
     global $CFG, $OUTPUT;
     if (!$page->user_is_editing() || !$page->user_can_edit_blocks()) {
         return null;
@@ -2216,14 +2218,14 @@ function block_add_block_ui($page, $output) {
         return $bc;
     }
 
-    $menu = array();
-    foreach ($missingblocks as $block) {
+    $menu = array ();
+    foreach($missingblocks as $block) {
         $menu[$block->name] = $block->title;
     }
 
-    $actionurl = new moodle_url($page->url, array('sesskey'=>sesskey()));
-    $select = new single_select($actionurl, 'bui_addblock', $menu, null, array(''=>get_string('adddots')), 'add_block');
-    $select->set_label(get_string('addblock'), array('class'=>'accesshide'));
+    $actionurl = new moodle_url($page->url, array ('sesskey'  =>  sesskey()));
+    $select = new single_select($actionurl, 'bui_addblock', $menu, null, array (''  =>  get_string('adddots')), 'add_block');
+    $select->set_label(get_string('addblock'), array ('class'  =>  'accesshide'));
     $bc->content = $OUTPUT->render($select);
     return $bc;
 }
@@ -2235,7 +2237,7 @@ function block_add_block_ui($page, $output) {
  * @todo Write/Fix this function. Currently returns immediately
  * @param $course
  */
-function blocks_remove_inappropriate($course) {
+function blocks_remove_inappropriate ($course){
     // TODO
     return;
     /*
@@ -2249,8 +2251,8 @@ function blocks_remove_inappropriate($course) {
         return;
     }
 
-    foreach($blockmanager as $region) {
-        foreach($region as $instance) {
+    foreach ($blockmanager as $region) {
+        foreach ($region as $instance) {
             $block = blocks_get_record($instance->blockid);
             if(!blocks_name_allowed_in_format($block->name, $pageformat)) {
                blocks_delete_instance($instance->instance);
@@ -2266,7 +2268,7 @@ function blocks_remove_inappropriate($course) {
  * @param string $pageformat
  * @return bool
  */
-function blocks_name_allowed_in_format($name, $pageformat) {
+function blocks_name_allowed_in_format ($name, $pageformat){
     $accept = NULL;
     $maxdepth = -1;
     if (!$bi = block_instance($name)) {
@@ -2275,10 +2277,10 @@ function blocks_name_allowed_in_format($name, $pageformat) {
 
     $formats = $bi->applicable_formats();
     if (!$formats) {
-        $formats = array();
+        $formats = array ();
     }
-    foreach ($formats as $format => $allowed) {
-        $formatregex = '/^'.str_replace('*', '[^-]*', $format).'.*$/';
+    foreach($formats as $format  =>  $allowed) {
+        $formatregex = '/^' . str_replace('*', '[^-]*', $format) . '.*$/';
         $depth = substr_count($format, '-');
         if (preg_match($formatregex, $pageformat) && $depth > $maxdepth) {
             $maxdepth = $depth;
@@ -2298,13 +2300,13 @@ function blocks_name_allowed_in_format($name, $pageformat) {
  * @param bool $nolongerused legacy parameter. Not used, but kept for backwards compatibility.
  * @param bool $skipblockstables for internal use only. Makes @see blocks_delete_all_for_context() more efficient.
  */
-function blocks_delete_instance($instance, $nolongerused = false, $skipblockstables = false) {
+function blocks_delete_instance ($instance, $nolongerused = false, $skipblockstables = false){
     global $DB;
 
     // Allow plugins to use this block before we completely delete it.
     if ($pluginsfunction = get_plugins_with_function('pre_block_delete')) {
-        foreach ($pluginsfunction as $plugintype => $plugins) {
-            foreach ($plugins as $pluginfunction) {
+        foreach($pluginsfunction as $plugintype  =>  $plugins) {
+            foreach($plugins as $pluginfunction) {
                 $pluginfunction($instance);
             }
         }
@@ -2316,9 +2318,9 @@ function blocks_delete_instance($instance, $nolongerused = false, $skipblockstab
     context_helper::delete_instance(CONTEXT_BLOCK, $instance->id);
 
     if (!$skipblockstables) {
-        $DB->delete_records('block_positions', array('blockinstanceid' => $instance->id));
-        $DB->delete_records('block_instances', array('id' => $instance->id));
-        $DB->delete_records_list('user_preferences', 'name', array('block'.$instance->id.'hidden','docked_block_instance_'.$instance->id));
+        $DB->delete_records('block_positions', array ('blockinstanceid'  =>  $instance->id));
+        $DB->delete_records('block_instances', array ('id'  =>  $instance->id));
+        $DB->delete_records_list('user_preferences', 'name', array ('block' . $instance->id . 'hidden', 'docked_block_instance_' . $instance->id));
     }
 }
 
@@ -2327,7 +2329,7 @@ function blocks_delete_instance($instance, $nolongerused = false, $skipblockstab
  *
  * @param array $instanceids A list of block instance ID.
  */
-function blocks_delete_instances($instanceids) {
+function blocks_delete_instances ($instanceids){
     global $DB;
 
     $limit = 1000;
@@ -2338,9 +2340,9 @@ function blocks_delete_instances($instanceids) {
     }
 
     // Perform deletion for each chunk.
-    foreach ($chunks as $chunk) {
+    foreach($chunks as $chunk) {
         $instances = $DB->get_recordset_list('block_instances', 'id', $chunk);
-        foreach ($instances as $instance) {
+        foreach($instances as $instance) {
             blocks_delete_instance($instance, false, true);
         }
         $instances->close();
@@ -2348,8 +2350,8 @@ function blocks_delete_instances($instanceids) {
         $DB->delete_records_list('block_positions', 'blockinstanceid', $chunk);
         $DB->delete_records_list('block_instances', 'id', $chunk);
 
-        $preferences = array();
-        foreach ($chunk as $instanceid) {
+        $preferences = array ();
+        foreach($chunk as $instanceid) {
             $preferences[] = 'block' . $instanceid . 'hidden';
             $preferences[] = 'docked_block_instance_' . $instanceid;
         }
@@ -2362,15 +2364,15 @@ function blocks_delete_instances($instanceids) {
  *
  * @param int $contextid the context id.
  */
-function blocks_delete_all_for_context($contextid) {
+function blocks_delete_all_for_context ($contextid){
     global $DB;
-    $instances = $DB->get_recordset('block_instances', array('parentcontextid' => $contextid));
-    foreach ($instances as $instance) {
+    $instances = $DB->get_recordset('block_instances', array ('parentcontextid'  =>  $contextid));
+    foreach($instances as $instance) {
         blocks_delete_instance($instance, true);
     }
     $instances->close();
-    $DB->delete_records('block_instances', array('parentcontextid' => $contextid));
-    $DB->delete_records('block_positions', array('contextid' => $contextid));
+    $DB->delete_records('block_instances', array ('parentcontextid'  =>  $contextid));
+    $DB->delete_records('block_positions', array ('contextid'  =>  $contextid));
 }
 
 /**
@@ -2381,11 +2383,11 @@ function blocks_delete_all_for_context($contextid) {
  * @param moodle_page $page the back to set the visibility with respect to.
  * @param integer $newvisibility 1 for visible, 0 for hidden.
  */
-function blocks_set_visibility($instance, $page, $newvisibility) {
+function blocks_set_visibility ($instance, $page, $newvisibility){
     global $DB;
     if (!empty($instance->blockpositionid)) {
         // Already have local information on this page.
-        $DB->set_field('block_positions', 'visible', $newvisibility, array('id' => $instance->blockpositionid));
+        $DB->set_field('block_positions', 'visible', $newvisibility, array ('id'  =>  $instance->blockpositionid));
         return;
     }
 
@@ -2410,7 +2412,7 @@ function blocks_set_visibility($instance, $page, $newvisibility) {
  * @param bool $notusedanymore No longer used.
  * @return array|object row from block table, or all rows.
  */
-function blocks_get_record($blockid = NULL, $notusedanymore = false) {
+function blocks_get_record ($blockid = NULL, $notusedanymore = false){
     global $PAGE;
     $blocks = $PAGE->blocks->get_installed_blocks();
     if ($blockid === NULL) {
@@ -2429,7 +2431,7 @@ function blocks_get_record($blockid = NULL, $notusedanymore = false) {
  * @param array $blocksarray
  * @return bool|object Instance if found else false
  */
-function blocks_find_block($blockid, $blocksarray) {
+function blocks_find_block ($blockid, $blocksarray){
     if (empty($blocksarray)) {
         return false;
     }
@@ -2438,7 +2440,7 @@ function blocks_find_block($blockid, $blocksarray) {
             continue;
         }
         foreach($blockgroup as $instance) {
-            if($instance->blockid == $blockid) {
+            if ($instance->blockid == $blockid) {
                 return $instance;
             }
         }
@@ -2448,14 +2450,14 @@ function blocks_find_block($blockid, $blocksarray) {
 
 // Functions for programatically adding default blocks to pages ================
 
- /**
-  * Parse a list of default blocks. See config-dist for a description of the format.
-  *
-  * @param string $blocksstr Determines the starting point that the blocks are added in the region.
-  * @return array the parsed list of default blocks
-  */
-function blocks_parse_default_blocks_list($blocksstr) {
-    $blocks = array();
+/**
+ * Parse a list of default blocks. See config-dist for a description of the format.
+ *
+ * @param string $blocksstr Determines the starting point that the blocks are added in the region.
+ * @return array the parsed list of default blocks
+ */
+function blocks_parse_default_blocks_list ($blocksstr){
+    $blocks = array ();
     $bits = explode(':', $blocksstr);
     if (!empty($bits)) {
         $leftbits = trim(array_shift($bits));
@@ -2475,15 +2477,15 @@ function blocks_parse_default_blocks_list($blocksstr) {
 /**
  * @return array the blocks that should be added to the site course by default.
  */
-function blocks_get_default_site_course_blocks() {
+function blocks_get_default_site_course_blocks (){
     global $CFG;
 
     if (isset($CFG->defaultblocks_site)) {
         return blocks_parse_default_blocks_list($CFG->defaultblocks_site);
     } else {
-        return array(
-            BLOCK_POS_LEFT => array(),
-            BLOCK_POS_RIGHT => array()
+        return array (
+            BLOCK_POS_LEFT  =>  array (),
+            BLOCK_POS_RIGHT  =>  array ()
         );
     }
 }
@@ -2493,7 +2495,7 @@ function blocks_get_default_site_course_blocks() {
  *
  * @param object $course a course object.
  */
-function blocks_add_default_course_blocks($course) {
+function blocks_add_default_course_blocks ($course){
     global $CFG;
 
     if (isset($CFG->defaultblocks_override)) {
@@ -2506,7 +2508,7 @@ function blocks_add_default_course_blocks($course) {
         $blocknames = blocks_parse_default_blocks_list($CFG->{'defaultblocks_' . $course->format});
 
     } else {
-        require_once($CFG->dirroot. '/course/lib.php');
+        require_once($CFG->dirroot . '/course/lib.php');
         $blocknames = course_get_format($course)->get_default_blocks();
 
     }
@@ -2524,21 +2526,61 @@ function blocks_add_default_course_blocks($course) {
 /**
  * Add the default system-context blocks. E.g. the admin tree.
  */
-function blocks_add_default_system_blocks() {
+function blocks_add_default_system_blocks (){
     global $DB;
 
     $page = new moodle_page();
     $page->set_context(context_system::instance());
     // We don't add blocks required by the theme, they will be auto-created.
-    $page->blocks->add_blocks(array(BLOCK_POS_LEFT => array('admin_bookmarks')), 'admin-*', null, null, 2);
+    $page->blocks->add_blocks(array (BLOCK_POS_LEFT  =>  array ('admin_bookmarks')), 'admin-*', null, null, 2);
 
-    if ($defaultmypage = $DB->get_record('my_pages', array('userid' => null, 'name' => '__default', 'private' => 1))) {
+    if ($defaultmypage = $DB->get_record('my_pages', array ('userid'  =>  null, 'name'  =>  '__default', 'private'  =>  1))) {
         $subpagepattern = $defaultmypage->id;
     } else {
         $subpagepattern = null;
     }
 
-    $newblocks = array('private_files', 'online_users', 'badges', 'calendar_month', 'calendar_upcoming');
-    $newcontent = array('lp', 'course_overview');
-    $page->blocks->add_blocks(array(BLOCK_POS_RIGHT => $newblocks, 'content' => $newcontent), 'my-index', $subpagepattern);
+    $newblocks = array ('private_files', 'online_users', 'badges', 'calendar_month', 'calendar_upcoming');
+    $newcontent = array ('lp', 'course_overview');
+    $page->blocks->add_blocks(array (BLOCK_POS_RIGHT  =>  $newblocks, 'content'  =>  $newcontent), 'my-index', $subpagepattern);
+}
+
+/**
+ * Get the instanceids for given context
+ *
+ * @param int $contextid number of the element whose descendants are requested *
+ * @param bool $recursive a sign that all descendants of the element are requested on the ascending line *
+ * @param object $filter restriction on the type of objects returned (course, block, user, etc)
+ * @return array the blocks that should be added to the site course by default.
+ */
+function blocks_get_instanceids_for_context ($contextid, $recursive = false, $filter = null){
+    //objext of global database
+    global $DB;
+    //array of returning instance ids of given context
+    $instanceids = [];
+    //if needs all descendants of given context
+    if ($recursive) {
+        //if needs only one type of returning ids
+        if ($filter) {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context WHERE path LIKE ? AND contextlevel = ?", array ("/$contextid/%", "$filter"));
+        } else {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context WHERE path LIKE ?", array ("/$contextid/%"));
+        }
+
+    } //if needs only childs of given context
+    else {
+        //if needs only one type of returning ids
+        if ($filter) {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context WHERE path REGEXP ? AND contextlevel = ?", array ("\/$contextid\/[0-9]+$", "$filter"));
+        } else {
+            $instanceidclasses = $DB->get_records_sql("SELECT id, instanceid FROM mdl_context WHERE path REGEXP ?", array ("\/$contextid\/[0-9]+$"));
+        }
+    }
+
+    foreach($instanceidclasses as &$instanceidclass) {
+        $instanceids[] = $instanceidclass->instanceid;
+    }
+
+
+    return $instanceids;
 }
